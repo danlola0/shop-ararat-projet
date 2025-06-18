@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Styles personnalisés pour l'expérience mobile */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* Boutons tactiles optimisés pour mobile */
+  .btn-touch {
+    @apply min-h-[44px] min-w-[44px] touch-manipulation;
+  }
+  
+  /* Inputs optimisés pour mobile */
+  .input-mobile {
+    @apply text-base; /* Évite le zoom sur iOS */
+  }
+  
+  /* Scrollbar personnalisée */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(156 163 175);
+    border-radius: 3px;
+  }
+  
+  /* Animations pour les transitions */
+  .slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  .slide-out {
+    animation: slideOut 0.3s ease-in;
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOut {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+  
+  /* Styles pour les formulaires mobiles */
+  .form-mobile {
+    @apply space-y-4;
+  }
+  
+  .form-mobile input,
+  .form-mobile textarea,
+  .form-mobile select {
+    @apply text-base py-3 px-4;
+  }
+  
+  /* Styles pour les cartes responsive */
+  .card-mobile {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6;
+  }
+  
+  /* Styles pour la navigation mobile */
+  .nav-mobile {
+    @apply fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 shadow-lg;
+  }
+  
+  /* Overlay pour mobile */
+  .overlay-mobile {
+    @apply fixed inset-0 bg-black bg-opacity-50 z-40;
+  }
+}
+
+@layer utilities {
+  /* Utilitaires pour le responsive */
+  .text-responsive {
+    @apply text-sm sm:text-base lg:text-lg;
+  }
+  
+  .padding-responsive {
+    @apply p-3 sm:p-4 lg:p-6;
+  }
+  
+  .margin-responsive {
+    @apply m-2 sm:m-4 lg:m-6;
+  }
+  
+  /* Utilitaires pour les espacements */
+  .space-responsive {
+    @apply space-y-3 sm:space-y-4 lg:space-y-6;
+  }
+  
+  /* Utilitaires pour les grilles */
+  .grid-responsive {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+  }
+  
+  /* Utilitaires pour les flexbox */
+  .flex-responsive {
+    @apply flex flex-col sm:flex-row;
+  }
+  
+  /* Utilitaires pour les tailles */
+  .w-responsive {
+    @apply w-full sm:w-auto;
+  }
+  
+  .h-responsive {
+    @apply h-auto sm:h-full;
+  }
+}
