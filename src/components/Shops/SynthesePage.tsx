@@ -557,12 +557,12 @@ const SynthesePage: React.FC = () => {
       const fetchAvailableReports = async () => {
       try {
         const res = await axios.get('https://shop-ararat-api.onrender.com/api/list-reports');
-        setAvailableReports(res.data.reports.map((filename: string) => ({
-          id: filename,
-          name: filename,
-          downloadUrl: `https://shop-ararat-api.onrender.com/api/download-report/${filename}`,
-          generatedAt: '', // Optionnel, à améliorer si l'API renvoie la date
-          size: '',        // Optionnel, à améliorer si l'API renvoie la taille
+        setAvailableReports(res.data.reports.map((report: any) => ({
+          id: report.filename,
+          name: report.filename,
+          downloadUrl: report.downloadUrl,
+          generatedAt: report.createdAt || '',
+          size: report.size || '',
           shopName: shops.find(s => s.id === selectedShopId)?.name || 'Shop',
           period: '',      // Optionnel
         })));
