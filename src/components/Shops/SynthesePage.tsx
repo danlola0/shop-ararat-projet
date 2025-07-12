@@ -554,22 +554,22 @@ const SynthesePage: React.FC = () => {
   };
 
   // Fonctions pour les rapports Excel
-  const fetchAvailableReports = async () => {
-    try {
-      const res = await axios.get('http://localhost:5000/api/list-reports');
-      setAvailableReports(res.data.reports.map((filename: string) => ({
-        id: filename,
-        name: filename,
-        downloadUrl: `http://localhost:5000/api/download-report/${filename}`,
-        generatedAt: '', // Optionnel, à améliorer si l'API renvoie la date
-        size: '',        // Optionnel, à améliorer si l'API renvoie la taille
-        shopName: shops.find(s => s.id === selectedShopId)?.name || 'Shop',
-        period: '',      // Optionnel
-      })));
-    } catch (err) {
-      setAvailableReports([]);
-    }
-  };
+      const fetchAvailableReports = async () => {
+      try {
+        const res = await axios.get('https://shop-ararat-api.onrender.com/api/list-reports');
+        setAvailableReports(res.data.reports.map((filename: string) => ({
+          id: filename,
+          name: filename,
+          downloadUrl: `https://shop-ararat-api.onrender.com/api/download-report/${filename}`,
+          generatedAt: '', // Optionnel, à améliorer si l'API renvoie la date
+          size: '',        // Optionnel, à améliorer si l'API renvoie la taille
+          shopName: shops.find(s => s.id === selectedShopId)?.name || 'Shop',
+          period: '',      // Optionnel
+        })));
+      } catch (err) {
+        setAvailableReports([]);
+      }
+    };
 
   useEffect(() => {
     fetchAvailableReports();
@@ -624,7 +624,7 @@ const SynthesePage: React.FC = () => {
       // Appel réel à l'API Flask
       setReportStatus(`Génération du rapport ${periodLabel}...`);
       
-      const response = await axios.post('http://localhost:5000/api/generate-report', {
+      const response = await axios.post('https://shop-ararat-api.onrender.com/api/generate-report', {
         type: reportType,
         startDate,
         endDate,
