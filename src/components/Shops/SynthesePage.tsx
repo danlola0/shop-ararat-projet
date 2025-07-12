@@ -631,11 +631,17 @@ const SynthesePage: React.FC = () => {
         shopId: selectedShopId,
       });
 
-      setReportStatus(`✅ Rapport ${periodLabel} généré avec succès !`);
-      // Rafraîchir la liste des rapports disponibles
-      fetchAvailableReports();
+      console.log('Réponse API:', response.data);
+      
+      if (response.data.success) {
+        setReportStatus(`✅ Rapport ${periodLabel} généré avec succès !`);
+        // Rafraîchir la liste des rapports disponibles
+        fetchAvailableReports();
+      } else {
+        setReportStatus(`❌ Erreur: ${response.data.message || 'Erreur inconnue'}`);
+      }
 
-      setTimeout(() => setReportStatus(''), 3000);
+      setTimeout(() => setReportStatus(''), 5000);
     } catch (error) {
       console.error('Erreur génération rapport:', error);
       setReportStatus('❌ Erreur lors de la génération du rapport');
