@@ -1,0 +1,22 @@
+{
+  "short_name": "Boutique Ararat",
+  "name": "Boutique Ararat Projet Digital Services",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#2563eb",
+  "theme_color": "#2563eb",
+  "description": "Application de gestion Shop Ararat (PWA)",
+  "orientation": "portrait"
+} 

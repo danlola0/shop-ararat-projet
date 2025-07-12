@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Autoriser la lecture de la collection shops à tous (même non connectés)
+    match /shops/{shopId} {
+      allow read: if true;
+    }
+
+    // Autoriser les utilisateurs à lire/écrire uniquement les opérations de leur shop
+    match /operations/{docId} {
+      // Admin : accès total
+      allow read, write: if request.auth != null && isAdmin();
+      // Création : permettre à tous les utilisateurs connectés
+      allow create: if request.auth != null;
+      // Lecture, update, delete : vérifier le shopId du document existant
+      allow read, update, delete: if request.auth != null &&
+                                  resource.data.shopId == getUserShopId();
+    }
+    
+    // Fonction helper pour vérifier si l'utilisateur est admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+    
+    // Fonction helper pour vérifier si l'utilisateur est du bon shop
+    function isUserFromShop(shopId) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId == shopId;
+    }
+    
+    // Fonction helper pour obtenir le rôle de l'utilisateur
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Fonction helper pour obtenir le shopId de l'utilisateur
+    function getUserShopId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId;
+    }
+    
+    // Fonction de validation de l'intégrité des stocks (simplifiée)
+    function validateStockIntegrity(data) {
+      return true; // Validation simplifiée pour éviter les erreurs de syntaxe
+    }
+
+    // Autoriser la création de son propre document utilisateur à l'inscription
+    match /users/{userId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null && isAdmin();
+    }
+    
+    // Autoriser les utilisateurs à lire/écrire uniquement les mouvements de leur shop
+    match /mouvements/{docId} {
+      // Admin : accès total
+      allow read, write: if request.auth != null && isAdmin();
+      // Création : permettre à tous les utilisateurs connectés
+      allow create: if request.auth != null;
+      // Lecture, update, delete : vérifier le shopId du document existant
+      allow read, update, delete: if request.auth != null &&
+                                  resource.data.shopId == getUserShopId();
+    }
+    
+    // Règles pour les dépôts de carte
+    match /depots/{docId} {
+      // Admin : accès total
+      allow read, write: if request.auth != null && isAdmin();
+      // Création : permettre à tous les utilisateurs connectés
+      allow create: if request.auth != null;
+      // Lecture, update, delete : vérifier le shopId du document existant
+      allow read, update, delete: if request.auth != null &&
+                                  resource.data.shopId == getUserShopId();
+    }
+    
+    // Règles pour les clients
+    match /clients/{docId} {
+      // Admin : accès total
+      allow read, write: if request.auth != null && isAdmin();
+      // Création : permettre à tous les utilisateurs connectés
+      allow create: if request.auth != null;
+      // Lecture, update, delete : vérifier le shopId du document existant
+      allow read, update, delete: if request.auth != null &&
+                                  resource.data.shopId == getUserShopId();
+    }
+    
+    // TauxJournalier : tous les connectés peuvent lire, seul l'admin peut écrire
+    match /TauxJournalier/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+    
+    // Règles générales pour toutes les autres collections
+    match /{document=**} {
+      // Admin : accès total (vérifié dans Firestore)
+      allow read, write: if request.auth != null && isAdmin();
+      
+      // User : accès limité à son shop
+      allow read, write: if request.auth != null &&
+                         getUserRole() == "user" &&
+                         resource.data.shopId == getUserShopId();
+    }
+  }
+} 

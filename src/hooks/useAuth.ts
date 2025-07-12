@@ -18,10 +18,47 @@ export const useAuth = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
+        try {
+          // Récupérer les custom claims du token
+          const token = await firebaseUser.getIdTokenResult();
+          const customClaims = token.claims;
+          
+          console.log('Custom claims récupérés:', customClaims);
+          
         // Récupérer les données utilisateur depuis Firestore
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
-          setCurrentUser(userDoc.data() as User);
+          const userData = userDoc.data() as Omit<User, 'id'>;
+            
+            // Fusionner les données Firestore avec les custom claims
+          setCurrentUser({
+            id: firebaseUser.uid,
+              ...userData,
+              // Priorité aux custom claims pour role et shopId
+              role: customClaims.role || userData.role || 'user',
+              shopId: customClaims.shopId || userData.shopId || '',
+              shopName: customClaims.shopName || userData.shopName || ''
+          });
+        } else {
+            // Si pas de document Firestore, utiliser seulement les custom claims
+          console.warn(`Aucun document Firestore trouvé pour l'utilisateur authentifié (${firebaseUser.email}, ${firebaseUser.uid})`);
+            setCurrentUser({
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              nom: '',
+              prenom: '',
+              sexe: 'M',
+              poste: '',
+              telephone: '',
+              role: customClaims.role || 'user',
+              shopId: customClaims.shopId || '',
+              shopName: customClaims.shopName || '',
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch (error) {
+          console.error('Erreur lors de la récupération des données utilisateur:', error);
+          setCurrentUser(null);
         }
       } else {
         setCurrentUser(null);
@@ -56,7 +93,9 @@ export const useAuth = () => {
       
       await setDoc(doc(db, 'users', user.uid), newUser);
       return user;
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erreur lors de l’inscription Firebase Auth:', error);
+      alert(error.message || JSON.stringify(error));
       throw error;
     }
   };

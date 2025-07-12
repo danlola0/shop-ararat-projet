@@ -625,10 +625,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             onClick={() => handleSystemAction('backup')}
-            className="flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             <Download size={16} />
-            <span>Sauvegarder</span>
+            <span>📥 Sauvegarder</span>
           </button>
           <button
             onClick={() => handleSystemAction('restore')}

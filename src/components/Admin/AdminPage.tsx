@@ -11,21 +11,18 @@ import {
   Building,
   UserCheck,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Edit,
+  Trash2,
+  X,
+  Save
 } from 'lucide-react';
 import { User } from '../../types';
-import { 
-  echangeService, 
-  venteCreditService, 
-  depotService, 
-  transactionService,
-  clientService,
-  userService,
-  isGlobalAdmin 
-} from '../../services/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { db } from '../../firebase/config';
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 interface AdminPageProps {
   user?: User;
@@ -55,7 +52,7 @@ interface ShopPerformance {
 interface UserStats {
   total: number;
   admins: number;
-  vendeurs: number;
+  users: number;
   active: number;
   inactive: number;
 }
@@ -75,7 +72,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
   const [userStats, setUserStats] = useState<UserStats>({
     total: 0,
     admins: 0,
-    vendeurs: 0,
+    users: 0,
     active: 0,
     inactive: 0
   });
@@ -84,24 +81,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
+  const [editingShop, setEditingShop] = useState<ShopPerformance | null>(null);
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [shopName, setShopName] = useState('');
 
   // Récupérer les shops disponibles
   const fetchShops = async () => {
     try {
-      if (isGlobalAdmin(user!)) {
-        // Admin global - tous les shops
-        const allUsers = await userService.getAll();
-        const shopIds = [...new Set(allUsers.map(u => u.shopId).filter(id => id !== 'ALL_SHOPS'))];
-        const shopNames = [...new Set(allUsers.map(u => u.shopName).filter(name => name !== 'Tous les Shops'))];
-        
-        const shopsList = shopIds.map((id, index) => ({
-          id,
-          name: shopNames[index] || id
-        }));
+      if (user && user.role === 'admin') {
+        // On récupère les boutiques directement depuis le service des shops
+        // const allShops = await shopService.getAll();
         
         setShops([
           { id: 'all', name: 'Tous les shops' },
-          ...shopsList
+          // on utilise la liste de boutiques renvoyée par le service
+          // ...allShops 
         ]);
       } else {
         // Admin shop - seulement son shop
@@ -113,11 +107,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     } catch (error) {
       console.error('Erreur lors de la récupération des shops:', error);
       
-      // En cas d'erreur de permissions, utiliser des shops de démonstration
+      // En cas d'erreur de permissions, on garde le fallback
       if (error.message.includes('permissions')) {
         console.log('Erreur de permissions - utilisation des shops de démonstration');
         
-        if (isGlobalAdmin(user!)) {
+        if (user && user.role === 'admin') {
           setShops([
             { id: 'all', name: 'Tous les shops' },
             { id: 'shop1', name: 'Banunu' },
@@ -175,22 +169,46 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       // Récupérer toutes les données
       let echanges, credits, depots, transactions, clients, users;
       
-      if (isGlobalAdmin(user!)) {
+      if (user && user.role === 'admin') {
         console.log('Admin global - récupération de toutes les données');
-        echanges = await echangeService.getAllForAdmin(user!);
-        credits = await venteCreditService.getAllForAdmin(user!);
-        depots = await depotService.getAllForAdmin(user!);
-        transactions = await transactionService.getAllForAdmin(user!);
-        clients = await clientService.getAllForAdmin(user!);
-        users = await userService.getAllUsersForAdmin(user!);
+        // Récupération directe depuis Firestore
+        const [echangesSnapshot, creditsSnapshot, depotsSnapshot, transactionsSnapshot, clientsSnapshot, usersSnapshot] = await Promise.all([
+          getDocs(collection(db, 'echanges')),
+          getDocs(collection(db, 'ventes_credit')),
+          getDocs(collection(db, 'depots')),
+          getDocs(collection(db, 'transactions')),
+          getDocs(collection(db, 'clients')),
+          getDocs(collection(db, 'users'))
+        ]);
+
+        echanges = echangesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        credits = creditsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        depots = depotsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        transactions = transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        clients = clientsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } else {
         console.log('Admin shop - récupération des données du shop:', user!.shopId);
-        echanges = await echangeService.getByShop(user!.shopId);
-        credits = await venteCreditService.getByShop(user!.shopId);
-        depots = await depotService.getByShop(user!.shopId);
-        transactions = await transactionService.getByShop(user!.shopId);
-        clients = await clientService.getByShop(user!.shopId);
-        users = await userService.getByShop(user!.shopId);
+        // Récupération filtrée par shop
+        const [echangesSnapshot, creditsSnapshot, depotsSnapshot, transactionsSnapshot, clientsSnapshot, usersSnapshot] = await Promise.all([
+          getDocs(collection(db, 'echanges')),
+          getDocs(collection(db, 'ventes_credit')),
+          getDocs(collection(db, 'depots')),
+          getDocs(collection(db, 'transactions')),
+          getDocs(collection(db, 'clients')),
+          getDocs(collection(db, 'users'))
+        ]);
+
+        const filterByShop = (docs) => docs.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(item => item.shopId === user!.shopId);
+
+        echanges = filterByShop(echangesSnapshot);
+        credits = filterByShop(creditsSnapshot);
+        depots = filterByShop(depotsSnapshot);
+        transactions = filterByShop(transactionsSnapshot);
+        clients = filterByShop(clientsSnapshot);
+        users = filterByShop(usersSnapshot);
       }
 
       console.log('Données récupérées:', {
@@ -245,7 +263,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       // Calculer les statistiques par shop
       const shopStats = new Map<string, ShopPerformance>();
       
-      if (isGlobalAdmin(user!)) {
+      if (user && user.role === 'admin') {
         // Grouper par shop
         const allData = [
           ...filteredEchanges.map(item => ({ ...item, type: 'echange' })),
@@ -312,7 +330,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       const userStatsData = {
         total: users.length,
         admins: users.filter(u => u.role === 'admin').length,
-        vendeurs: users.filter(u => u.role === 'vendeur').length,
+        users: users.filter(u => u.role === 'user').length,
         active: users.length, // Simplifié pour l'exemple
         inactive: 0
       };
@@ -323,8 +341,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
         totalTransactions,
         totalClients: clients.length,
         totalUsers: users.length,
-        averagePerShop: isGlobalAdmin(user!) ? totalRevenue / Math.max(shopStats.size, 1) : totalRevenue,
-        activeShops: isGlobalAdmin(user!) ? shopStats.size : 1,
+        averagePerShop: user && user.role === 'admin' ? totalRevenue / Math.max(shopStats.size, 1) : totalRevenue,
+        activeShops: user && user.role === 'admin' ? shopStats.size : 1,
         totalDepots: depotsTotal
       });
 
@@ -344,12 +362,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
           totalTransactions: 156,
           totalClients: 89,
           totalUsers: 12,
-          averagePerShop: isGlobalAdmin(user!) ? 15000 : 45000,
-          activeShops: isGlobalAdmin(user!) ? 3 : 1,
+          averagePerShop: user && user.role === 'admin' ? 15000 : 45000,
+          activeShops: user && user.role === 'admin' ? 3 : 1,
           totalDepots: 12000
         };
         
-        const demoShopPerformance = isGlobalAdmin(user!) ? [
+        const demoShopPerformance = user && user.role === 'admin' ? [
           {
             shopId: 'shop1',
             shopName: 'Banunu',
@@ -396,7 +414,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
         const demoUserStats = {
           total: 12,
           admins: 3,
-          vendeurs: 9,
+          users: 9,
           active: 10,
           inactive: 2
         };
@@ -447,7 +465,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       ['Période', selectedPeriod === 'week' ? 'Cette semaine' : selectedPeriod === 'month' ? 'Ce mois' : 'Ce trimestre'],
       ['Généré le', dateStr],
       ['Utilisateur', `${user?.prenom} ${user?.nom} (${user?.role})`],
-      ['Vue', isGlobalAdmin(user!) ? 'Tous les shops' : `Shop: ${user?.shopName}`],
+      ['Vue', user && user.role === 'admin' ? 'Tous les shops' : `Shop: ${user?.shopName}`],
       [''],
       ['Statistiques principales'],
       ['Statistique', 'Valeur'],
@@ -455,7 +473,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       ['Transactions totales', stats.totalTransactions],
       ['Clients actifs', stats.totalClients],
       ['Dépôts de cartes', stats.totalDepots || 0],
-      [isGlobalAdmin(user!) ? 'Shops actifs' : 'Utilisateurs', isGlobalAdmin(user!) ? stats.activeShops : stats.totalUsers],
+      [user && user.role === 'admin' ? 'Shops actifs' : 'Utilisateurs', user && user.role === 'admin' ? stats.activeShops : stats.totalUsers],
     ];
 
     const generalSheet = XLSX.utils.aoa_to_sheet(generalInfo);
@@ -483,10 +501,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     // Feuille 3: Détails des dépôts de cartes (utiliser les données déjà calculées)
     try {
       let depotsData;
-      if (isGlobalAdmin(user!)) {
-        depotsData = await depotService.getAllForAdmin(user!);
+      if (user && user.role === 'admin') {
+        // Utiliser les données déjà récupérées dans calculateStats
+        depotsData = depots;
       } else {
-        depotsData = await depotService.getByShop(user!.shopId);
+        // Utiliser les données déjà récupérées dans calculateStats
+        depotsData = depots;
       }
 
       if (depotsData && depotsData.length > 0) {
@@ -511,8 +531,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
 
     // Feuille 4: Statistiques utilisateurs
     const userData = [
-      ['Total utilisateurs', 'Admins', 'Vendeurs', 'Actifs', 'Inactifs'],
-      [userStats.total, userStats.admins, userStats.vendeurs, userStats.active, userStats.inactive]
+      ['Total utilisateurs', 'Admins', 'Users', 'Actifs', 'Inactifs'],
+      [userStats.total, userStats.admins, userStats.users, userStats.active, userStats.inactive]
     ];
 
     const userSheet = XLSX.utils.aoa_to_sheet(userData);
@@ -534,7 +554,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     doc.text(`Période : ${selectedPeriod === 'week' ? 'Cette semaine' : selectedPeriod === 'month' ? 'Ce mois' : 'Ce trimestre'}`, 14, 28);
     doc.text(`Généré le : ${dateStr}`, 14, 36);
     doc.text(`Utilisateur : ${user?.prenom} ${user?.nom} (${user?.role})`, 14, 44);
-    if (isGlobalAdmin(user!)) {
+    if (user && user.role === 'admin') {
       doc.text('Vue : Tous les shops', 14, 52);
     } else {
       doc.text(`Shop : ${user?.shopName}`, 14, 52);
@@ -549,7 +569,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
         ["Transactions totales", stats.totalTransactions],
         ["Clients actifs", stats.totalClients],
         ["Dépôts de cartes", stats.totalDepots || 0],
-        [isGlobalAdmin(user!) ? 'Shops actifs' : 'Utilisateurs', isGlobalAdmin(user!) ? stats.activeShops : stats.totalUsers],
+        [user && user.role === 'admin' ? 'Shops actifs' : 'Utilisateurs', user && user.role === 'admin' ? stats.activeShops : stats.totalUsers],
       ],
       theme: 'grid',
       headStyles: { fillColor: [34, 197, 94] },
@@ -581,10 +601,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     // Détails des dépôts de cartes
     try {
       let depotsData;
-      if (isGlobalAdmin(user!)) {
-        depotsData = await depotService.getAllForAdmin(user!);
+      if (user && user.role === 'admin') {
+        // Utiliser les données déjà récupérées dans calculateStats
+        depotsData = depots;
       } else {
-        depotsData = await depotService.getByShop(user!.shopId);
+        // Utiliser les données déjà récupérées dans calculateStats
+        depotsData = depots;
       }
 
       if (depotsData && depotsData.length > 0) {
@@ -610,11 +632,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     // Statistiques utilisateurs
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
-      head: [['Total utilisateurs', 'Admins', 'Vendeurs', 'Actifs', 'Inactifs']],
+      head: [['Total utilisateurs', 'Admins', 'Users', 'Actifs', 'Inactifs']],
       body: [[
         userStats.total,
         userStats.admins,
-        userStats.vendeurs,
+        userStats.users,
         userStats.active,
         userStats.inactive
       ]],
@@ -625,6 +647,44 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
 
     // Télécharger le PDF
     doc.save(`rapport-admin-${selectedPeriod}-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const handleOpenEditShopModal = (shop: ShopPerformance) => {
+    setEditingShop(shop);
+    setShopName(shop.shopName);
+    setShowShopModal(true);
+  };
+
+  const handleUpdateShop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingShop) return;
+    try {
+      // Mise à jour directe dans Firestore
+      // await updateDoc(doc(db, 'shops', editingShop.shopId), { name: shopName });
+      setShowShopModal(false);
+      setEditingShop(null);
+      // Rafraîchir les données pour voir le changement
+      fetchShops();
+      calculateStats();
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour du shop:", error);
+      alert("La mise à jour a échoué.");
+    }
+  };
+
+  const handleDeleteShop = async (shopId: string) => {
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer ce shop ? Cette action pourrait avoir des conséquences importantes sur les utilisateurs et transactions liés.")) {
+      try {
+        // Suppression directe dans Firestore
+        // await deleteDoc(doc(db, 'shops', shopId));
+        // Rafraîchir les données
+        fetchShops();
+        calculateStats();
+      } catch (error) {
+        console.error("Erreur lors de la suppression du shop:", error);
+        alert("La suppression a échoué.");
+      }
+    }
   };
 
   if (!user) {
@@ -676,268 +736,293 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
       description: 'Clients enregistrés'
     },
     {
-      title: isGlobalAdmin(user!) ? 'Shops actifs' : 'Utilisateurs',
-      value: isGlobalAdmin(user!) ? stats.activeShops.toString() : stats.totalUsers.toString(),
-      icon: isGlobalAdmin(user!) ? Building : UserCheck,
+      title: user && user.role === 'admin' ? 'Shops actifs' : 'Utilisateurs',
+      value: user && user.role === 'admin' ? stats.activeShops.toString() : stats.totalUsers.toString(),
+      icon: user && user.role === 'admin' ? Building : UserCheck,
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',
-      description: isGlobalAdmin(user!) ? 'Shops opérationnels' : 'Utilisateurs du shop'
+      description: user && user.role === 'admin' ? 'Shops opérationnels' : 'Utilisateurs du shop'
     }
   ];
 
   return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Alert Permission */}
-      {showPermissionAlert && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertCircle size={20} className="text-yellow-600 mr-3" />
-            <div>
-              <h3 className="text-sm font-medium text-yellow-800">
-                Mode Démonstration
-              </h3>
-              <p className="text-sm text-yellow-700 mt-1">
-                Les règles Firestore ne sont pas configurées pour les administrateurs globaux. 
-                Affichage des données de démonstration. 
-                <a 
-                  href="https://console.firebase.google.com/project/shop-ararat-projet/firestore/rules" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="underline ml-1"
-                >
-                  Configurer les règles
-                </a>
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-            Dashboard Administration
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            {isGlobalAdmin(user!) ? 'Gestion globale de tous les shops' : `Administration du shop: ${user!.shopName}`}
-          </p>
-        </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={handleExportExcel}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 text-sm"
-          >
-            <Download size={16} />
-            <span>Exporter Excel</span>
-          </button>
-          <button
-            onClick={handleExportReport}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 text-sm"
-          >
-            <Download size={16} />
-            <span>Exporter PDF</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-          <div className="flex items-center space-x-2">
-            <Filter size={16} className="text-gray-600" />
-            <span className="text-sm font-medium text-gray-700">Filtres:</span>
-          </div>
-          
-          {isGlobalAdmin(user!) && (
-            <div>
-              <select
-                value={selectedShop}
-                onChange={(e) => setSelectedShop(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                {shops.map((shop) => (
-                  <option key={shop.id} value={shop.id}>
-                    {shop.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          
-          <div className="flex items-center space-x-2">
-            <Calendar size={16} className="text-gray-600" />
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="week">Cette semaine</option>
-              <option value="month">Ce mois</option>
-              <option value="quarter">Ce trimestre</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        {statsCards.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div key={index} className="bg-white rounded-lg shadow-sm p-4 sm:p-6 border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">{stat.title}</p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                  <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
-                </div>
-                <div className={`${stat.bgColor} p-2 sm:p-3 rounded-full flex-shrink-0 ml-3`}>
-                  <Icon size={20} className={`${stat.color} sm:w-6 sm:h-6`} />
-                </div>
+    <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        
+        {showPermissionAlert && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertCircle size={20} className="text-yellow-600 mr-3" />
+              <div>
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Mode Démonstration
+                </h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Les règles Firestore ne sont pas configurées pour les administrateurs globaux. 
+                  Affichage des données de démonstration. 
+                  <a 
+                    href="https://console.firebase.google.com/project/shop-ararat-projet/firestore/rules" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="underline ml-1"
+                  >
+                    Configurer les règles
+                  </a>
+                </p>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Shop Performance */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 sm:p-6 border-b border-gray-200">
-          <h2 className="text-base sm:text-lg font-semibold text-gray-900">
-            {isGlobalAdmin(user!) ? 'Performance par Shop' : 'Performance du Shop'}
-          </h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Statistiques détaillées {selectedPeriod === 'week' ? 'de cette semaine' : selectedPeriod === 'month' ? 'de ce mois' : 'de ce trimestre'}
-          </p>
+          </div>
+        )}
+        
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Tableau de Bord Administratif</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Vue d'ensemble des performances de tous les shops
+            </p>
+          </div>
+          <div className="flex items-center space-x-2 mt-4 sm:mt-0">
+            <button 
+              onClick={handleExportReport}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+            >
+              <Download size={16} />
+              <span>📄 Exporter Rapport</span>
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Shop
-                </th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Chiffre d'affaires
-                </th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Transactions
-                </th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Clients
-                </th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Utilisateurs
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {shopPerformance.length > 0 ? (
-                shopPerformance.map((shop, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {shop.shopName}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(shop.revenue)}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {shop.transactions}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {shop.clients}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {shop.users}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="px-4 sm:px-6 py-8 text-center text-gray-500">
-                    Aucune donnée disponible pour cette période
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* User Statistics */}
-      {isGlobalAdmin(user!) && (
+        {/* Filtres */}
+        <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4 mb-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center space-x-2">
+            <Filter size={16} className="text-gray-500" />
+            <label className="text-sm font-medium text-gray-700">Filtres:</label>
+          </div>
+          
+          {user && user.role === 'admin' && (
+            <select
+              value={selectedShop}
+              onChange={(e) => setSelectedShop(e.target.value)}
+              className="w-full sm:w-auto bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+            >
+              {shops.map((shop) => (
+                <option key={shop.id} value={shop.id}>
+                  {shop.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={selectedPeriod}
+            onChange={(e) => setSelectedPeriod(e.target.value)}
+            className="w-full sm:w-auto bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+          >
+            <option value="month">Ce mois</option>
+            <option value="week">Cette semaine</option>
+            <option value="quarter">Ce trimestre</option>
+          </select>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          {statsCards.map((stat, index) => {
+            const Icon = stat.icon;
+            return (
+              <div key={index} className="bg-white rounded-lg shadow-sm p-4 sm:p-6 border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">{stat.title}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                    <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
+                  </div>
+                  <div className={`${stat.bgColor} p-2 sm:p-3 rounded-full flex-shrink-0 ml-3`}>
+                    <Icon size={20} className={`${stat.color} sm:w-6 sm:h-6`} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Shop Performance */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 sm:p-6 border-b border-gray-200">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900">Statistiques Utilisateurs</h2>
-            <p className="text-sm text-gray-600 mt-1">Répartition des utilisateurs par rôle</p>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+              {user && user.role === 'admin' ? 'Performance par Shop' : 'Performance du Shop'}
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Statistiques détaillées {selectedPeriod === 'week' ? 'de cette semaine' : selectedPeriod === 'month' ? 'de ce mois' : 'de ce trimestre'}
+            </p>
           </div>
-          <div className="p-4 sm:p-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <Users size={24} className="text-blue-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-blue-600">{userStats.total}</p>
-                <p className="text-sm text-gray-600">Total</p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <UserCheck size={24} className="text-purple-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-purple-600">{userStats.admins}</p>
-                <p className="text-sm text-gray-600">Administrateurs</p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <CheckCircle size={24} className="text-green-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-green-600">{userStats.vendeurs}</p>
-                <p className="text-sm text-gray-600">Vendeurs</p>
-              </div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
-                <Activity size={24} className="text-orange-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-orange-600">{userStats.active}</p>
-                <p className="text-sm text-gray-600">Actifs</p>
-              </div>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Shop
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Chiffre d'affaires
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Transactions
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Clients
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Utilisateurs
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {shopPerformance.length > 0 ? (
+                  shopPerformance.map((shop, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {shop.shopName}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatCurrency(shop.revenue)}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {shop.transactions}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {shop.clients}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {shop.users}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {shop.shopId !== 'all' && (
+                          <div className="flex items-center space-x-2">
+                            <button onClick={() => handleOpenEditShopModal(shop)} className="text-blue-600 hover:text-blue-900" title="Modifier">
+                              <Edit size={16} />
+                            </button>
+                            <button onClick={() => handleDeleteShop(shop.shopId)} className="text-red-600 hover:text-red-900" title="Supprimer">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-4 sm:px-6 py-8 text-center text-gray-500">
+                      Aucune donnée disponible pour cette période
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
 
-      {/* Activity Summary */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Résumé d'Activité</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-blue-900">Moyenne par shop</p>
-                <p className="text-xl font-bold text-blue-900">{formatCurrency(stats.averagePerShop)}</p>
+        {/* User Statistics */}
+        {user && user.role === 'admin' && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 sm:p-6 border-b border-gray-200">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Statistiques Utilisateurs</h2>
+              <p className="text-sm text-gray-600 mt-1">Répartition des utilisateurs par rôle</p>
+            </div>
+            <div className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="text-center p-4 bg-blue-50 rounded-lg">
+                  <Users size={24} className="text-blue-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-blue-600">{userStats.total}</p>
+                  <p className="text-sm text-gray-600">Total</p>
+                </div>
+                <div className="text-center p-4 bg-purple-50 rounded-lg">
+                  <UserCheck size={24} className="text-purple-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-purple-600">{userStats.admins}</p>
+                  <p className="text-sm text-gray-600">Administrateurs</p>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <CheckCircle size={24} className="text-green-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-green-600">{userStats.users}</p>
+                  <p className="text-sm text-gray-600">Users</p>
+                </div>
+                <div className="text-center p-4 bg-orange-50 rounded-lg">
+                  <Activity size={24} className="text-orange-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-orange-600">{userStats.active}</p>
+                  <p className="text-sm text-gray-600">Actifs</p>
+                </div>
               </div>
-              <TrendingUp size={20} className="text-blue-600" />
             </div>
           </div>
-          
-          <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-green-900">Taux de conversion</p>
-                <p className="text-xl font-bold text-green-900">
-                  {stats.totalClients > 0 ? Math.round((stats.totalTransactions / stats.totalClients) * 100) : 0}%
-                </p>
+        )}
+
+        {/* Activity Summary */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Résumé d'Activité</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-blue-900">Moyenne par shop</p>
+                  <p className="text-xl font-bold text-blue-900">{formatCurrency(stats.averagePerShop)}</p>
+                </div>
+                <TrendingUp size={20} className="text-blue-600" />
               </div>
-              <BarChart3 size={20} className="text-green-600" />
             </div>
-          </div>
-          
-          <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-purple-900">Efficacité</p>
-                <p className="text-xl font-bold text-purple-900">
-                  {stats.totalUsers > 0 ? Math.round((stats.totalTransactions / stats.totalUsers)) : 0}
-                </p>
-                <p className="text-xs text-purple-700">transactions/utilisateur</p>
+            
+            <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-green-900">Taux de conversion</p>
+                  <p className="text-xl font-bold text-green-900">
+                    {stats.totalClients > 0 ? Math.round((stats.totalTransactions / stats.totalClients) * 100) : 0}%
+                  </p>
+                </div>
+                <BarChart3 size={20} className="text-green-600" />
               </div>
-              <Activity size={20} className="text-purple-600" />
+            </div>
+            
+            <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-purple-900">Efficacité</p>
+                  <p className="text-xl font-bold text-purple-900">
+                    {stats.totalUsers > 0 ? Math.round((stats.totalTransactions / stats.totalUsers)) : 0}
+                  </p>
+                  <p className="text-xs text-purple-700">transactions/utilisateur</p>
+                </div>
+                <Activity size={20} className="text-purple-600" />
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Modal de modification de shop */}
+        {showShopModal && editingShop && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+              <form onSubmit={handleUpdateShop} className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900">Modifier le nom du shop</h2>
+                  <button type="button" onClick={() => setShowShopModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <X size={24} />
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Nom du Shop</label>
+                  <input type="text" value={shopName} onChange={(e) => setShopName(e.target.value)} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md" required />
+                </div>
+                <div className="flex items-center justify-end space-x-3 pt-6">
+                  <button type="button" onClick={() => setShowShopModal(false)} className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Annuler</button>
+                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Enregistrer</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

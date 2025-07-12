@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, User, Phone, MapPin, Building, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { Mail, Lock, User, Phone, MapPin, Building, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { User as UserType, Shop } from '../../types';
-import { shopService } from '../../services/firestore';
+import { useNavigate } from 'react-router-dom';
+import { db } from '../../firebase/config';
+import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 export const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,7 +15,8 @@ export const AuthPage: React.FC = () => {
   const [shops, setShops] = useState<Shop[]>([]);
   const [loadingShops, setLoadingShops] = useState(false);
   
-  const { login, register, currentUser } = useAuth();
+  const { login, register, logout, currentUser } = useAuth();
+  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -25,7 +28,7 @@ export const AuthPage: React.FC = () => {
     telephone: '',
     shopId: '',
     shopName: '',
-    role: 'vendeur' as 'vendeur' | 'admin'
+    role: 'user' as 'user'
   });
 
   // Fonction pour vider les champs
@@ -40,7 +43,7 @@ export const AuthPage: React.FC = () => {
       telephone: '',
       shopId: '',
       shopName: '',
-      role: 'vendeur'
+      role: 'user'
     });
     setError('');
     setSuccessMessage('');
@@ -58,16 +61,15 @@ export const AuthPage: React.FC = () => {
     const fetchShops = async () => {
       try {
         setLoadingShops(true);
-        const shopsData = await shopService.getAll();
+        const querySnapshot = await getDocs(collection(db, 'shops'));
+        const shopsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setShops(shopsData);
       } catch (error) {
         console.error('Erreur lors de la récupération des shops:', error);
-        // En cas d'erreur, on continue sans les shops
       } finally {
         setLoadingShops(false);
       }
     };
-
     fetchShops();
   }, []);
 
@@ -83,6 +85,9 @@ export const AuthPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLogin) {
+      setFormData((prev) => ({ ...prev, role: 'user' }));
+    }
     setLoading(true);
     setError('');
     setSuccessMessage('');
@@ -92,12 +97,13 @@ export const AuthPage: React.FC = () => {
         await login(formData.email, formData.password);
         
         // Message de succès pour la connexion
-        setSuccessMessage('Connexion réussie ! Redirection en cours...');
+        setSuccessMessage('Connexion réussie !');
         
         // Attendre un peu pour que l'utilisateur voie le message
         setTimeout(() => {
           clearFormData();
-        }, 1500);
+          navigate('/dashboard');
+        }, 2000);
       } else {
         // Validation pour l'inscription
         if (!formData.shopId) {
@@ -114,17 +120,46 @@ export const AuthPage: React.FC = () => {
           shopName: formData.shopName,
           role: formData.role
         };
-        await register(formData.email, formData.password, userData);
-        
-        // Message de succès et redirection vers login
-        setSuccessMessage('Compte créé avec succès ! Vous pouvez maintenant vous connecter.');
-        setIsLogin(true);
-        
-        // Réinitialiser le formulaire
-        clearFormData();
+        const userCredential = await register(formData.email, formData.password, userData);
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          email: formData.email,
+          nom: formData.nom,
+          prenom: formData.prenom,
+          sexe: formData.sexe,
+          poste: formData.poste,
+          telephone: formData.telephone,
+          shopId: formData.shopId,
+          shopName: formData.shopName,
+          role: formData.role,
+          createdAt: new Date()
+        });
+        await logout(); // Déconnecte immédiatement après inscription
+        setSuccessMessage("Votre compte a été créé avec succès !");
+        setTimeout(() => {
+          setSuccessMessage('');
+          setIsLogin(true); // Passe en mode login
+          navigate('/login'); // Redirige vers la page de connexion (adapter le chemin si besoin)
+        }, 2500);
       }
     } catch (error: any) {
-      setError(error.message || 'Une erreur est survenue');
+      let friendlyError = 'Une erreur inattendue est survenue. Merci de vérifier vos informations ou de réessayer plus tard.';
+      if (isLogin && error.code) {
+        switch (error.code) {
+          case 'auth/wrong-password':
+          case 'auth/user-not-found':
+            friendlyError = 'Email ou mot de passe incorrect.';
+            break;
+          case 'auth/invalid-email':
+            friendlyError = 'Adresse email invalide.';
+            break;
+          case 'auth/too-many-requests':
+            friendlyError = 'Trop de tentatives. Veuillez réessayer plus tard.';
+            break;
+          default:
+            friendlyError = 'Une erreur inattendue est survenue. Merci de vérifier vos informations ou de réessayer plus tard.';
+        }
+      }
+      setError(friendlyError);
       
       // Vider les champs même en cas d'erreur pour l'inscription
       if (!isLogin) {
@@ -141,234 +176,201 @@ export const AuthPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-2 sm:p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm sm:max-w-md lg:max-w-lg p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-sm sm:max-w-md lg:max-w-lg p-4 sm:p-8 lg:p-10 border border-white/20 relative">
         {/* Logo et titre */}
         <div className="text-center mb-6 sm:mb-8">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4">
-            <Building size={24} className="text-white sm:w-8 sm:h-8" />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse" style={{ animation: 'pulseLogo 2s infinite' }}>
+            <Building size={36} className="text-white sm:w-10 sm:h-10 drop-shadow-lg" />
           </div>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Shop Ararat Projet</h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-gray-900 drop-shadow-lg" style={{ textShadow: '0 0 16px #60a5fa, 0 0 32px #818cf8' }}>Shop Ararat Projet</h1>
+          <p className="text-base sm:text-lg text-gray-600 mt-2 animate-fadein">
             {isLogin ? 'Connectez-vous à votre compte' : 'Créez votre compte'}
           </p>
         </div>
 
         {/* Message de succès */}
         {successMessage && (
-          <div className={`border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-sm mb-4 flex items-center ${
+          <div className={`border rounded-lg px-4 py-3 text-sm mb-4 flex items-center shadow-sm animate-fadein ${
             successMessage.includes('Connexion réussie') 
               ? 'bg-blue-50 border-blue-200 text-blue-700' 
               : 'bg-green-50 border-green-200 text-green-700'
           }`}>
-            <CheckCircle size={16} className="mr-2 flex-shrink-0" />
+            <CheckCircle size={18} className="mr-2 flex-shrink-0" />
             {successMessage}
+          </div>
+        )}
+        {/* Message d'erreur */}
+        {error && (
+          <div className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm mb-4 flex items-center shadow-sm animate-fadein">
+            <XCircle size={18} className="mr-2 flex-shrink-0" />
+            {error}
           </div>
         )}
 
         {/* Formulaire */}
-        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5 animate-fadein">
           {/* Email */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-              Email
-            </label>
-            <div className="relative">
-              <Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5" />
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                placeholder="votre@email.com"
-              />
-            </div>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
+            <input
+              type="email"
+              autoComplete="email"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+              placeholder="Adresse email"
+              value={formData.email}
+              onChange={e => setFormData({ ...formData, email: e.target.value })}
+              required
+              disabled={loading}
+            />
           </div>
-
           {/* Mot de passe */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-              Mot de passe
-            </label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                className="w-full pl-9 sm:pl-10 pr-12 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                placeholder="••••••••"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-              >
-                {showPassword ? <EyeOff size={18} className="sm:w-5 sm:h-5" /> : <Eye size={18} className="sm:w-5 sm:h-5" />}
-              </button>
-            </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
+            <input
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+              placeholder="Mot de passe"
+              value={formData.password}
+              onChange={e => setFormData({ ...formData, password: e.target.value })}
+              required
+              disabled={loading}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 focus:outline-none"
+              onClick={() => setShowPassword(!showPassword)}
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
-
-          {/* Champs supplémentaires pour l'inscription */}
+          {/* Champs supplémentaires pour inscription */}
           {!isLogin && (
             <>
-              {/* Nom et Prénom */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                    Prénom
-                  </label>
-                  <div className="relative">
-                    <User size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5" />
-                    <input
-                      type="text"
-                      required
-                      value={formData.prenom}
-                      onChange={(e) => setFormData({...formData, prenom: e.target.value})}
-                      className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                      placeholder="Prénom"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                    Nom
-                  </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
                   <input
                     type="text"
-                    required
-                    value={formData.nom}
-                    onChange={(e) => setFormData({...formData, nom: e.target.value})}
-                    className="w-full px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
                     placeholder="Nom"
+                    value={formData.nom}
+                    onChange={e => setFormData({ ...formData, nom: e.target.value })}
+                    required
+                    disabled={loading}
                   />
                 </div>
-              </div>
-
-              {/* Sexe et Poste */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                    Sexe
-                  </label>
-                  <select
-                    value={formData.sexe}
-                    onChange={(e) => setFormData({...formData, sexe: e.target.value as 'M' | 'F'})}
-                    className="w-full px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                  >
-                    <option value="M">Masculin</option>
-                    <option value="F">Féminin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                    Poste
-                  </label>
+                <div className="relative flex-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
                   <input
                     type="text"
+                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+                    placeholder="Prénom"
+                    value={formData.prenom}
+                    onChange={e => setFormData({ ...formData, prenom: e.target.value })}
                     required
-                    value={formData.poste}
-                    onChange={(e) => setFormData({...formData, poste: e.target.value})}
-                    className="w-full px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                    placeholder="Vendeur"
+                    disabled={loading}
                   />
                 </div>
               </div>
-
-              {/* Téléphone */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                  Téléphone
-                </label>
-                <div className="relative">
-                  <Phone size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5" />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
                   <input
                     type="tel"
-                    required
+                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+                    placeholder="Téléphone"
                     value={formData.telephone}
-                    onChange={(e) => setFormData({...formData, telephone: e.target.value})}
-                    className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                    placeholder="+243 123 456 789"
+                    onChange={e => setFormData({ ...formData, telephone: e.target.value })}
+                    required
+                    disabled={loading}
                   />
                 </div>
+                <div className="relative flex-1">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
+                  <select
+                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+                    value={formData.shopId}
+                    onChange={e => handleShopChange(e.target.value)}
+                    required
+                    disabled={loading || loadingShops}
+                  >
+                    <option value="">Sélectionner un shop</option>
+                    {shops.map(shop => (
+                      <option key={shop.id} value={shop.id}>{shop.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-
-              {/* Shop */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                  Shop
-                </label>
-                <select
-                  value={formData.shopId}
-                  onChange={(e) => handleShopChange(e.target.value)}
-                  className="w-full px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                  disabled={loadingShops}
-                >
-                  <option value="">
-                    {loadingShops ? 'Chargement des shops...' : 'Sélectionnez un shop'}
-                  </option>
-                  {shops.map(shop => (
-                    <option key={shop.id} value={shop.id}>
-                      {shop.name} {shop.location ? `(${shop.location})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Rôle */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
-                  Rôle
-                </label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value as 'vendeur' | 'admin'})}
-                  className="w-full px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                >
-                  <option value="vendeur">Vendeur</option>
-                </select>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    className="w-full pl-3 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+                    placeholder="Poste (optionnel)"
+                    value={formData.poste}
+                    onChange={e => setFormData({ ...formData, poste: e.target.value })}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="relative flex-1">
+                  <select
+                    className="w-full pl-3 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white/80 placeholder-gray-400 transition"
+                    value={formData.sexe}
+                    onChange={e => setFormData({ ...formData, sexe: e.target.value as 'M' | 'F' })}
+                    required
+                    disabled={loading}
+                  >
+                    <option value="M">Homme</option>
+                    <option value="F">Femme</option>
+                  </select>
+                </div>
               </div>
             </>
           )}
-
-          {/* Message d'erreur */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          {/* Bouton de soumission */}
+          {/* Bouton de connexion/inscription */}
           <button
             type="submit"
+            className="w-full py-3 mt-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 flex items-center justify-center gap-2"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2.5 sm:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base mt-4 sm:mt-6"
           >
             {loading ? (
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white mr-2"></div>
-                {isLogin ? 'Connexion...' : 'Création...'}
-              </div>
+              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+              </svg>
             ) : (
-              isLogin ? 'Se connecter' : 'Créer le compte'
+              isLogin ? 'Connexion' : 'Créer un compte'
             )}
           </button>
         </form>
-
         {/* Lien pour changer de mode */}
-        <div className="text-center mt-4 sm:mt-6">
-          <p className="text-xs sm:text-sm text-gray-600">
-            {isLogin ? "Vous n'avez pas de compte ?" : "Vous avez déjà un compte ?"}
-            <button
-              onClick={handleModeSwitch}
-              className="ml-1 sm:ml-2 text-blue-600 hover:text-blue-700 font-medium"
-            >
-              {isLogin ? 'Créer un compte' : 'Se connecter'}
-            </button>
-          </p>
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            className="text-blue-600 hover:underline font-semibold transition"
+            onClick={handleModeSwitch}
+            disabled={loading}
+          >
+            {isLogin ? "Créer un compte" : "J'ai déjà un compte"}
+          </button>
         </div>
+        {/* Animation CSS personnalisée */}
+        <style>{`
+          @keyframes pulseLogo {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); box-shadow: 0 0 32px #60a5fa44, 0 0 64px #818cf844; }
+          }
+          .animate-fadein {
+            animation: fadein 1.2s;
+          }
+          @keyframes fadein {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: none; }
+          }
+        `}</style>
       </div>
     </div>
   );

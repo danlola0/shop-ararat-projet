@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, Save, CheckCircle, AlertCircle } from 'lucide-react';
-import { echangeService } from '../../services/firestore';
 import { useAuth } from '../../hooks/useAuth';
+import { db } from '../../firebase/config';
+import { collection, addDoc, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 
 export const EchangeMonnaieForm: React.FC = () => {
   const { currentUser } = useAuth();
@@ -16,9 +17,50 @@ export const EchangeMonnaieForm: React.FC = () => {
     tauxJour: '',
     billetsEchangesFrancs: '',
     billetsEchangesDollars: '',
-    argentRecuFournisseur: '',
     date: new Date().toISOString().split('T')[0]
   });
+
+  const [ajoutStock, setAjoutStock] = useState({ CDF: '', USD: '' });
+  const [justification, setJustification] = useState({ CDF: '', USD: '' });
+  const [showAjout, setShowAjout] = useState({ CDF: false, USD: false });
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Pré-remplissage automatique pour Francs
+    const getLastStockFinal = async (devise: string) => {
+      try {
+        const stockQuery = query(
+          collection(db, 'stocks'),
+          where('shopId', '==', currentUser.shopId),
+          where('reseau', '==', 'echange'),
+          where('devise', '==', devise),
+          where('type', '==', 'echange'),
+          orderBy('date', 'desc'),
+          limit(1)
+        );
+        const stockSnapshot = await getDocs(stockQuery);
+        if (!stockSnapshot.empty) {
+          const lastStock = stockSnapshot.docs[0].data();
+          if (lastStock.stockFinal !== undefined) {
+        setFormData(formData => ({
+          ...formData,
+              ...(devise === 'CDF' 
+                ? { montantInitialFrancs: lastStock.stockFinal.toString() }
+                : { montantInitialDollars: lastStock.stockFinal.toString() }
+              )
+        }));
+      }
+        }
+      } catch (error) {
+        console.error(`Erreur lors de la récupération du stock ${devise}:`, error);
+      }
+    };
+
+    getLastStockFinal('CDF');
+    getLastStockFinal('USD');
+  }, [currentUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +85,6 @@ export const EchangeMonnaieForm: React.FC = () => {
         tauxJour: parseFloat(formData.tauxJour),
         billetsEchangesFrancs: parseFloat(formData.billetsEchangesFrancs),
         billetsEchangesDollars: parseFloat(formData.billetsEchangesDollars),
-        argentRecuFournisseur: parseFloat(formData.argentRecuFournisseur),
         shopId: currentUser.shopId,
         shopName: currentUser.shopName,
         userId: currentUser.id,
@@ -52,7 +93,33 @@ export const EchangeMonnaieForm: React.FC = () => {
       };
 
       // Sauvegarder dans Firebase
-      await echangeService.create(echangeData);
+      await addDoc(collection(db, 'echanges'), echangeData);
+
+      // Enregistrer aussi dans la collection centrale 'mouvements'
+      if ((parseFloat(formData.montantInitialFrancs) || 0) > 0) {
+        await addDoc(collection(db, 'mouvements'), {
+          type: 'autre',
+          montant: parseFloat(formData.montantInitialFrancs) || 0,
+          devise: 'CDF',
+          date: formData.date,
+          shopId: currentUser.shopId,
+          userId: currentUser.id,
+          libelle: 'Échange de monnaie',
+          createdAt: new Date().toISOString()
+        });
+      }
+      if ((parseFloat(formData.montantInitialDollars) || 0) > 0) {
+        await addDoc(collection(db, 'mouvements'), {
+          type: 'autre',
+          montant: parseFloat(formData.montantInitialDollars) || 0,
+          devise: 'USD',
+          date: formData.date,
+          shopId: currentUser.shopId,
+          userId: currentUser.id,
+          libelle: 'Échange de monnaie',
+          createdAt: new Date().toISOString()
+        });
+      }
 
       // Succès
       setShowSuccess(true);
@@ -65,7 +132,6 @@ export const EchangeMonnaieForm: React.FC = () => {
         tauxJour: '',
         billetsEchangesFrancs: '',
         billetsEchangesDollars: '',
-        argentRecuFournisseur: '',
         date: new Date().toISOString().split('T')[0]
       });
 
@@ -76,6 +142,34 @@ export const EchangeMonnaieForm: React.FC = () => {
       setTimeout(() => setShowError(false), 5000);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleAjoutStock = async (devise: 'CDF' | 'USD') => {
+    const ajout = parseFloat(ajoutStock[devise]) || 0;
+    if (ajout > 0) {
+      setFormData(formData => ({
+        ...formData,
+        ...(devise === 'CDF'
+          ? { montantInitialFrancs: ((parseFloat(formData.montantInitialFrancs) || 0) + ajout).toString() }
+          : { montantInitialDollars: ((parseFloat(formData.montantInitialDollars) || 0) + ajout).toString() }
+        )
+      }));
+      // Enregistrer un mouvement d'approvisionnement
+      await addDoc(collection(db, 'mouvements'), {
+        type: 'approvisionnement',
+        montant: ajout,
+        devise,
+        date: formData.date,
+        shopId: currentUser.shopId,
+        userId: currentUser.id,
+        libelle: 'Réapprovisionnement monnaie',
+        justification: justification[devise],
+        createdAt: new Date().toISOString()
+      });
+      setAjoutStock(a => ({ ...a, [devise]: '' }));
+      setJustification(j => ({ ...j, [devise]: '' }));
+      setShowAjout(s => ({ ...s, [devise]: false }));
     }
   };
 
@@ -120,6 +214,36 @@ export const EchangeMonnaieForm: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               placeholder="0.00"
             />
+            <button
+              type="button"
+              className="text-xs text-blue-700 underline mt-1"
+              onClick={() => setShowAjout(s => ({ ...s, CDF: !s.CDF }))}
+            >
+              + Ajouter un réapprovisionnement
+            </button>
+            {showAjout.CDF && (
+              <div className="mt-2 flex flex-col gap-2">
+                <input
+                  type="number"
+                  value={ajoutStock.CDF}
+                  onChange={e => setAjoutStock(a => ({ ...a, CDF: e.target.value }))}
+                  placeholder="Quantité ajoutée"
+                  className="border rounded px-2 py-1"
+                />
+                <input
+                  type="text"
+                  value={justification.CDF}
+                  onChange={e => setJustification(j => ({ ...j, CDF: e.target.value }))}
+                  placeholder="Justification (optionnel)"
+                  className="border rounded px-2 py-1"
+                />
+                <button
+                  type="button"
+                  className="bg-green-600 text-white px-2 py-1 rounded"
+                  onClick={() => handleAjoutStock('CDF')}
+                >Valider l'ajout</button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -135,6 +259,36 @@ export const EchangeMonnaieForm: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               placeholder="0.00"
             />
+            <button
+              type="button"
+              className="text-xs text-blue-700 underline mt-1"
+              onClick={() => setShowAjout(s => ({ ...s, USD: !s.USD }))}
+            >
+              + Ajouter un réapprovisionnement
+            </button>
+            {showAjout.USD && (
+              <div className="mt-2 flex flex-col gap-2">
+                <input
+                  type="number"
+                  value={ajoutStock.USD}
+                  onChange={e => setAjoutStock(a => ({ ...a, USD: e.target.value }))}
+                  placeholder="Quantité ajoutée"
+                  className="border rounded px-2 py-1"
+                />
+                <input
+                  type="text"
+                  value={justification.USD}
+                  onChange={e => setJustification(j => ({ ...j, USD: e.target.value }))}
+                  placeholder="Justification (optionnel)"
+                  className="border rounded px-2 py-1"
+                />
+                <button
+                  type="button"
+                  className="bg-green-600 text-white px-2 py-1 rounded"
+                  onClick={() => handleAjoutStock('USD')}
+                >Valider l'ajout</button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -194,21 +348,6 @@ export const EchangeMonnaieForm: React.FC = () => {
               placeholder="0.00"
             />
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Argent Reçu du Fournisseur
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            required
-            value={formData.argentRecuFournisseur}
-            onChange={(e) => setFormData({...formData, argentRecuFournisseur: e.target.value})}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            placeholder="0.00"
-          />
         </div>
 
         <button

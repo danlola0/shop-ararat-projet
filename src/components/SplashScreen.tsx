@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import araratImage from '../../images/ararat.jpg';
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -35,53 +34,86 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
       
       {/* Contenu principal */}
       <div className="relative z-10 text-center">
-        {/* Image */}
+        {/* Logo animé */}
         <div className="mb-8">
           <img 
-            src={araratImage} 
+            src="/Ararat Projet Digital Services Logo - Vibrant Colors.png" 
             alt="Ararat Projet" 
-            className="w-32 h-32 sm:w-40 sm:h-40 mx-auto rounded-full object-cover shadow-2xl border-4 border-white/20"
+            className="w-32 h-32 sm:w-40 sm:h-40 mx-auto rounded-full object-cover shadow-2xl border-4 border-white/20 animate-pulse"
+            style={{ animation: 'pulseLogo 2s infinite' }}
           />
         </div>
         
-        {/* Texte de bienvenue */}
+        {/* Texte de bienvenue avec effet glow */}
         <div className="space-y-4">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-2">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-2 drop-shadow-lg" style={{ textShadow: '0 0 16px #60a5fa, 0 0 32px #818cf8' }}>
             Bienvenue sur
           </h1>
-          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-blue-300 mb-4">
+          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-blue-300 mb-4 drop-shadow-lg" style={{ textShadow: '0 0 24px #818cf8, 0 0 48px #a5b4fc' }}>
             Ararat Projet
           </h2>
-          <p className="text-lg sm:text-xl text-blue-100 max-w-md mx-auto">
+          <p className="text-lg sm:text-xl text-blue-100 max-w-md mx-auto animate-fadein">
             Gestion intelligente de vos boutiques
           </p>
         </div>
         
-        {/* Indicateur de chargement */}
-        <div className="mt-8">
-          <div className="flex justify-center space-x-2">
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          </div>
+        {/* Loader circulaire SVG animé */}
+        <div className="mt-8 flex justify-center">
+          <svg className="animate-spin-slow" width="48" height="48" viewBox="0 0 48 48">
+            <circle cx="24" cy="24" r="20" fill="none" stroke="#fff" strokeWidth="4" opacity="0.2" />
+            <circle cx="24" cy="24" r="20" fill="none" stroke="#60a5fa" strokeWidth="4" strokeDasharray="100" strokeDashoffset="60" strokeLinecap="round" />
+          </svg>
         </div>
       </div>
       
-      {/* Effet de particules */}
+      {/* Effet de particules amélioré */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-white/30 rounded-full animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 2}s`,
-              animationDuration: `${2 + Math.random() * 2}s`
-            }}
-          />
-        ))}
+        {[...Array(24)].map((_, i) => {
+          const size = Math.random() * 2 + 1.5;
+          const color = [
+            'bg-white/30',
+            'bg-blue-200/30',
+            'bg-purple-200/30',
+            'bg-blue-400/20',
+            'bg-indigo-200/30'
+          ][Math.floor(Math.random() * 5)];
+          return (
+            <div
+              key={i}
+              className={`absolute rounded-full animate-pulse ${color}`}
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                width: `${size * 6}px`,
+                height: `${size * 6}px`,
+                animationDelay: `${Math.random() * 2}s`,
+                animationDuration: `${2 + Math.random() * 2}s`,
+                filter: 'blur(0.5px)'
+              }}
+            />
+          );
+        })}
       </div>
+      {/* Animation CSS personnalisée */}
+      <style>{`
+        @keyframes pulseLogo {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); box-shadow: 0 0 32px #60a5fa44, 0 0 64px #818cf844; }
+        }
+        .animate-spin-slow {
+          animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+          100% { transform: rotate(360deg); }
+        }
+        .animate-fadein {
+          animation: fadein 1.2s;
+        }
+        @keyframes fadein {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: none; }
+        }
+      `}</style>
     </div>
   );
 }; 

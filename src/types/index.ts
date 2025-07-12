@@ -1,5 +1,6 @@
 export interface User {
   id: string;
+  email: string;
   nom: string;
   prenom: string;
   sexe: 'M' | 'F';
@@ -7,7 +8,8 @@ export interface User {
   telephone: string;
   shopId: string;
   shopName: string;
-  role: 'vendeur' | 'admin';
+  role: 'user' | 'admin';
+  docId?: string;
 }
 
 export interface Shop {
@@ -58,6 +60,8 @@ export interface Client {
   telephone: string;
   solde: number;
   shopId: string;
+  montantOuverture: number;
+  deviseOuverture: 'CDF' | 'USD';
 }
 
 export interface DepotCarte {
@@ -96,4 +100,18 @@ export interface Message {
   date: string;
   shopId: string;
   shopName: string;
+}
+
+export interface EmpruntSociete {
+  id: string;
+  shopId: string;
+  shopName: string;
+  montant: number;
+  devise: 'CDF' | 'USD';
+  type: 'emprunt' | 'remboursement';
+  source: string;
+  motif?: string;
+  date: string;
+  userId: string;
+  userName: string;
 }

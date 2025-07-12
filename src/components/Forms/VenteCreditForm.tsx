@@ -1,228 +1,148 @@
 import React, { useState } from 'react';
-import { CreditCard, Save, CheckCircle, AlertCircle } from 'lucide-react';
-import { venteCreditService } from '../../services/firestore';
 import { useAuth } from '../../hooks/useAuth';
+import { db } from '../../firebase/config';
+import { collection, addDoc } from 'firebase/firestore';
 
-export const VenteCreditForm: React.FC = () => {
+const devises = ['CDF', 'USD'];
+
+const VenteCreditForm: React.FC = () => {
   const { currentUser } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showError, setShowError] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const [formData, setFormData] = useState({
-    stockInitial: '',
-    stockVendu: {
-      vodacom: '',
-      orange: '',
-      airtel: '',
-      africell: ''
-    },
-    fournisseur: '',
-    stockFinal: '',
-    date: new Date().toISOString().split('T')[0]
+  const [form, setForm] = useState({
+    montant: '',
+    devise: 'USD',
+    stockAvant: '',
+    stockApres: '',
+    date: new Date().toISOString().split('T')[0],
+    justification: ''
   });
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleStockVenduChange = (reseau: string, value: string) => {
-    setFormData({
-      ...formData,
-      stockVendu: {
-        ...formData.stockVendu,
-        [reseau]: value
-      }
-    });
+  const handleChange = (field: string, value: string) => {
+    setForm(f => ({ ...f, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!currentUser) {
-      setErrorMessage('Vous devez être connecté pour enregistrer une vente');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-      return;
-    }
-
-    setIsSubmitting(true);
-    setShowError(false);
-    setShowSuccess(false);
-
+    setLoading(true);
+    setError('');
+    setSuccess(false);
     try {
-      // Préparer les données pour Firebase
-      const venteData = {
-        ...formData,
-        stockInitial: parseFloat(formData.stockInitial),
-        stockVendu: {
-          vodacom: parseFloat(formData.stockVendu.vodacom) || 0,
-          orange: parseFloat(formData.stockVendu.orange) || 0,
-          airtel: parseFloat(formData.stockVendu.airtel) || 0,
-          africell: parseFloat(formData.stockVendu.africell) || 0
-        },
-        stockFinal: parseFloat(formData.stockFinal),
-        shopId: currentUser.shopId,
-        shopName: currentUser.shopName,
+      await addDoc(collection(db, 'ventesCredit'), {
         userId: currentUser.id,
-        userName: `${currentUser.prenom} ${currentUser.nom}`,
+        shopId: currentUser.shopId,
+        montant: parseFloat(form.montant) || 0,
+        devise: form.devise,
+        stockAvant: parseFloat(form.stockAvant) || 0,
+        stockApres: parseFloat(form.stockApres) || 0,
+        date: form.date,
+        justification: form.justification,
         createdAt: new Date().toISOString()
-      };
-
-      // Sauvegarder dans Firebase
-      await venteCreditService.create(venteData);
-
-      // Succès
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 5000);
-
-      // Réinitialiser le formulaire
-      setFormData({
-        stockInitial: '',
-        stockVendu: {
-          vodacom: '',
-          orange: '',
-          airtel: '',
-          africell: ''
-        },
-        fournisseur: '',
-        stockFinal: '',
-        date: new Date().toISOString().split('T')[0]
       });
-
-    } catch (error: any) {
-      console.error('Erreur lors de la sauvegarde:', error);
-      setErrorMessage(error.message || 'Erreur lors de la sauvegarde de la vente');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
+      setSuccess(true);
+      setForm({
+        montant: '',
+        devise: 'USD',
+        stockAvant: '',
+        stockApres: '',
+        date: new Date().toISOString().split('T')[0],
+        justification: ''
+      });
+    } catch (err: any) {
+      setError("Erreur lors de l'enregistrement de la vente de crédit.");
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Messages de succès et d'erreur */}
-      {showSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <CheckCircle size={20} className="text-green-600 mr-3" />
-            <p className="text-sm text-green-800">Vente de crédit enregistrée avec succès !</p>
-          </div>
-        </div>
-      )}
-
-      {showError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertCircle size={20} className="text-red-600 mr-3" />
-            <p className="text-sm text-red-800">{errorMessage}</p>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="flex items-center space-x-2 mb-6">
-          <CreditCard size={24} className="text-green-600" />
-          <h2 className="text-xl font-semibold text-gray-900">Vente de Crédit</h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stock Initial
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={formData.stockInitial}
-              onChange={(e) => setFormData({...formData, stockInitial: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stock Final
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={formData.stockFinal}
-              onChange={(e) => setFormData({...formData, stockFinal: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Fournisseur
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.fournisseur}
-              onChange={(e) => setFormData({...formData, fournisseur: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Nom du fournisseur"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date
-            </label>
-            <input
-              type="date"
-              required
-              value={formData.date}
-              onChange={(e) => setFormData({...formData, date: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
+    <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">Vente de Crédit</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Stock Vendu par Réseau</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(formData.stockVendu).map(([reseau, value]) => (
-              <div key={reseau}>
-                <label className="block text-sm font-medium text-gray-700 mb-2 capitalize">
-                  {reseau}
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={value}
-                  onChange={(e) => handleStockVenduChange(reseau, e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0.00"
-                />
-              </div>
-            ))}
-          </div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+          <input
+            type="date"
+            value={form.date}
+            onChange={e => handleChange('date', e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            required
+          />
         </div>
-
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Devise</label>
+          <select
+            value={form.devise}
+            onChange={e => handleChange('devise', e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+          >
+            {devises.map(dev => (
+              <option key={dev} value={dev}>{dev}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Montant de la vente</label>
+          <input
+            type="number"
+            value={form.montant}
+            onChange={e => handleChange('montant', e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="ex: 100"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Stock avant</label>
+          <input
+            type="number"
+            value={form.stockAvant}
+            onChange={e => handleChange('stockAvant', e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="ex: 1000"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Stock après</label>
+          <input
+            type="number"
+            value={form.stockApres}
+            onChange={e => handleChange('stockApres', e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="ex: 900"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Justification</label>
+        <textarea
+          value={form.justification}
+          onChange={e => handleChange('justification', e.target.value)}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+          rows={2}
+          placeholder="ex: Vente de crédit du jour"
+        />
+      </div>
+      {error && <div className="text-red-600 font-semibold p-3 bg-red-50 rounded-md">{error}</div>}
+      {success && (
+        <div className="text-green-600 font-semibold p-3 bg-green-50 rounded-md">
+          Vente de crédit enregistrée avec succès !
+        </div>
+      )}
+      <div className="flex justify-end pt-4">
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          disabled={loading}
         >
-          {isSubmitting ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              <span>Enregistrement...</span>
-            </>
-          ) : (
-            <>
-              <Save size={20} />
-              <span>Enregistrer la Vente</span>
-            </>
-          )}
+          {loading ? 'Enregistrement...' : 'Enregistrer la Vente'}
         </button>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 };
+
+export default VenteCreditForm;

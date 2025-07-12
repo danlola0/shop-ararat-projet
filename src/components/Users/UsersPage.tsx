@@ -21,7 +21,10 @@ import {
   Plus
 } from 'lucide-react';
 import { User } from '../../types';
-import { userService, isGlobalAdmin } from '../../services/firestore';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth, db } from '../../firebase/config';
+import { useAuth } from '../../hooks/useAuth';
+import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 
 interface UsersPageProps {
   user?: User;
@@ -40,7 +43,8 @@ interface UserFormData {
   telephone: string;
   shopId: string;
   shopName: string;
-  role: 'admin' | 'vendeur';
+  role: 'admin' | 'user';
+  password: string;
 }
 
 export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
@@ -59,6 +63,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   // État du formulaire
   const [formData, setFormData] = useState<UserFormData>({
@@ -70,34 +75,67 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
     telephone: '',
     shopId: '',
     shopName: '',
-    role: 'vendeur'
+    role: 'admin',
+    password: ''
   });
+
+  const { currentUser, loading: authLoading } = useAuth();
 
   // Initialiser le formulaire avec les shops disponibles
   useEffect(() => {
-    if (shops.length > 0 && !isGlobalAdmin(user!)) {
+    if (shops.length > 0 && currentUser && currentUser.role !== 'admin') {
       setFormData(prev => ({
         ...prev,
-        shopId: user!.shopId,
-        shopName: user!.shopName
+        shopId: currentUser.shopId,
+        shopName: currentUser.shopName
       }));
     }
-  }, [shops, user]);
+  }, [shops, currentUser]);
+
+  // Charger la liste des shops au montage
+  useEffect(() => {
+    // Les shops sont maintenant chargés dynamiquement dans fetchUsers
+    // basés sur les shopId des utilisateurs existants
+  }, []);
 
   // Récupérer les utilisateurs
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      console.log('Récupération des utilisateurs pour:', user?.email);
+      console.log('Récupération des utilisateurs pour:', currentUser?.email);
 
-      let allUsers: User[];
+      let allUsers: User[] = [];
       
-      if (isGlobalAdmin(user!)) {
-        console.log('Admin global - récupération de tous les utilisateurs');
-        allUsers = await userService.getAllUsersForAdmin(user!);
-      } else {
-        console.log('Admin shop - récupération des utilisateurs du shop:', user!.shopId);
-        allUsers = await userService.getByShop(user!.shopId);
+      if (currentUser && currentUser.role === 'admin') {
+        console.log('Admin - récupération de tous les utilisateurs');
+        // Récupérer tous les utilisateurs depuis Firestore
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        allUsers = usersSnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          docId: doc.id,
+          ...doc.data() 
+        } as User));
+        // Correction : charger la liste des shops depuis la collection 'shops'
+        const shopsSnap = await getDocs(collection(db, 'shops'));
+        const shopsList = shopsSnap.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name
+        }));
+        setShops([
+          { id: 'all', name: 'Tous les shops' },
+          ...shopsList
+        ]);
+      } else if (currentUser) {
+        console.log('User - récupération des utilisateurs du shop:', currentUser.shopId);
+        // Récupérer seulement les utilisateurs du même shop
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        allUsers = usersSnapshot.docs
+          .map(doc => ({ 
+            id: doc.id, 
+            docId: doc.id,
+            ...doc.data() 
+          } as User))
+          .filter(user => user.shopId === currentUser.shopId);
       }
 
       console.log('Utilisateurs récupérés:', allUsers.length);
@@ -111,119 +149,10 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
       setUsers(usersWithActions);
       setFilteredUsers(usersWithActions);
 
-      // Récupérer les shops pour les filtres
-      if (isGlobalAdmin(user!)) {
-        const shopIds = [...new Set(allUsers.map(u => u.shopId).filter(id => id !== 'ALL_SHOPS'))];
-        const shopNames = [...new Set(allUsers.map(u => u.shopName).filter(name => name !== 'Tous les Shops'))];
-        
-        const shopsList = shopIds.map((id, index) => ({
-          id,
-          name: shopNames[index] || id
-        }));
-        
-        setShops([
-          { id: 'all', name: 'Tous les shops' },
-          ...shopsList
-        ]);
-      } else {
-        setShops([
-          { id: user!.shopId, name: user!.shopName }
-        ]);
-      }
-
-    } catch (error) {
+      setShowPermissionAlert(false);
+    } catch (error: any) {
       console.error('Erreur lors de la récupération des utilisateurs:', error);
-      
-      if (error.message.includes('permissions')) {
-        console.log('Erreur de permissions - affichage des utilisateurs de démonstration');
-        setShowPermissionAlert(true);
-        
-        // Données de démonstration
-        const demoUsers: UserWithActions[] = isGlobalAdmin(user!) ? [
-          {
-            id: '1',
-            email: 'admin@shopararat.com',
-            nom: 'Admin',
-            prenom: 'Principal',
-            sexe: 'M',
-            poste: 'Administrateur Principal',
-            telephone: '+243 000 000 000',
-            shopId: 'ALL_SHOPS',
-            shopName: 'Tous les Shops',
-            role: 'admin',
-            isSelected: false
-          },
-          {
-            id: '2',
-            email: 'admin1@shopararat.com',
-            nom: 'Dupont',
-            prenom: 'Jean',
-            sexe: 'M',
-            poste: 'Administrateur Shop',
-            telephone: '+243 111 111 111',
-            shopId: 'shop1',
-            shopName: 'Banunu',
-            role: 'admin',
-            isSelected: false
-          },
-          {
-            id: '3',
-            email: 'vendeur1@shopararat.com',
-            nom: 'Martin',
-            prenom: 'Marie',
-            sexe: 'F',
-            poste: 'Vendeuse',
-            telephone: '+243 222 222 222',
-            shopId: 'shop1',
-            shopName: 'Banunu',
-            role: 'vendeur',
-            isSelected: false
-          },
-          {
-            id: '4',
-            email: 'vendeur2@shopararat.com',
-            nom: 'Bernard',
-            prenom: 'Pierre',
-            sexe: 'M',
-            poste: 'Vendeur',
-            telephone: '+243 333 333 333',
-            shopId: 'shop2',
-            shopName: 'Kinshasa Centre',
-            role: 'vendeur',
-            isSelected: false
-          }
-        ] : [
-          {
-            id: '1',
-            email: 'vendeur1@shopararat.com',
-            nom: 'Martin',
-            prenom: 'Marie',
-            sexe: 'F',
-            poste: 'Vendeuse',
-            telephone: '+243 222 222 222',
-            shopId: user!.shopId,
-            shopName: user!.shopName,
-            role: 'vendeur',
-            isSelected: false
-          },
-          {
-            id: '2',
-            email: 'vendeur2@shopararat.com',
-            nom: 'Bernard',
-            prenom: 'Pierre',
-            sexe: 'M',
-            poste: 'Vendeur',
-            telephone: '+243 333 333 333',
-            shopId: user!.shopId,
-            shopName: user!.shopName,
-            role: 'vendeur',
-            isSelected: false
-          }
-        ];
-
-        setUsers(demoUsers);
-        setFilteredUsers(demoUsers);
-      }
+      setErrorMessage("Impossible de charger les utilisateurs, vérifiez vos droits Firestore.");
     } finally {
       setLoading(false);
     }
@@ -264,10 +193,10 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
 
   // Charger les utilisateurs au montage
   useEffect(() => {
-    if (user) {
+    if (!authLoading && currentUser && (currentUser.shopId || currentUser.role === 'admin')) {
       fetchUsers();
     }
-  }, [user]);
+  }, [currentUser, authLoading]);
 
   // Gestion de la sélection multiple
   const handleSelectAll = (checked: boolean) => {
@@ -287,8 +216,11 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
   };
 
   // Ouvrir le modal pour ajouter un utilisateur
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     setEditingUser(null);
+    setErrorMessage('');
+    // Les shops sont déjà chargés dans fetchUsers
+    setShops(shops);
     setFormData({
       email: '',
       nom: '',
@@ -296,16 +228,19 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
       sexe: 'M',
       poste: '',
       telephone: '',
-      shopId: isGlobalAdmin(user!) ? '' : user!.shopId,
-      shopName: isGlobalAdmin(user!) ? '' : user!.shopName,
-      role: 'vendeur'
+      shopId: currentUser?.role === 'admin' ? '' : currentUser!.shopId,
+      shopName: currentUser?.role === 'admin' ? '' : currentUser!.shopName,
+      role: 'admin',
+      password: ''
     });
     setShowUserModal(true);
   };
 
   // Ouvrir le modal pour modifier un utilisateur
-  const handleEditUser = (userToEdit: User) => {
+  const handleEditUser = async (userToEdit: User) => {
     setEditingUser(userToEdit);
+    setErrorMessage('');
+    setShops(shops);
     setFormData({
       email: userToEdit.email,
       nom: userToEdit.nom,
@@ -315,34 +250,56 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
       telephone: userToEdit.telephone,
       shopId: userToEdit.shopId,
       shopName: userToEdit.shopName,
-      role: userToEdit.role
+      role: userToEdit.role as 'user' | 'admin',
+      password: ''
     });
     setShowUserModal(true);
   };
 
   // Sauvegarder l'utilisateur (ajout ou modification)
   const handleSaveUser = async () => {
+    if (loading || !currentUser) {
+      setErrorMessage("Veuillez patienter, l'authentification est en cours...");
+      return;
+    }
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const userData = {
+      email: formData.email,
+      nom: formData.nom,
+      prenom: formData.prenom,
+      sexe: formData.sexe,
+      poste: formData.poste,
+      telephone: formData.telephone,
+      shopId: formData.shopId,
+      shopName: shops.find(s => s.id === formData.shopId)?.name || '',
+      role: formData.role,
+    };
     try {
-      setIsSubmitting(true);
-
       if (editingUser) {
-        // Modification
-        await userService.update(editingUser.id, formData);
-        setSuccessMessage('Utilisateur modifié avec succès !');
+        if (!editingUser.docId) {
+          throw new Error("L'ID du document de l'utilisateur est manquant.");
+        }
+        // Mise à jour directe dans Firestore
+        await updateDoc(doc(db, 'users', editingUser.docId), userData);
+        await fetchUsers();
+        setShowUserModal(false);
+        setSuccessMessage(`L'utilisateur ${formData.nom} ${formData.prenom} (${formData.email}) a été mis à jour avec succès !`);
       } else {
-        // Ajout - simulation car on ne peut pas créer d'utilisateur sans mot de passe
-        console.log('Ajout d\'utilisateur:', formData);
-        setSuccessMessage('Utilisateur ajouté avec succès !');
+        if (!formData.password) {
+          throw new Error("Le mot de passe est requis pour créer un utilisateur.");
+        }
+        // Création directe dans Firestore
+        await addDoc(collection(db, 'users'), userData);
+        await fetchUsers();
+        setShowUserModal(false);
+        setSuccessMessage(`L'utilisateur ${formData.nom} ${formData.prenom} (${formData.email}) a été créé avec succès !`);
       }
-
-      setShowSuccessMessage(true);
-      setTimeout(() => setShowSuccessMessage(false), 3000);
-      
-      setShowUserModal(false);
-      fetchUsers(); // Recharger la liste
-    } catch (error) {
+      setTimeout(() => setSuccessMessage(''), 5000);
+    } catch (error: any) {
       console.error('Erreur lors de la sauvegarde:', error);
-      alert('Erreur lors de la sauvegarde de l\'utilisateur');
+      setErrorMessage(error.message || 'Erreur lors de la sauvegarde');
     } finally {
       setIsSubmitting(false);
     }
@@ -350,61 +307,59 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
 
   // Supprimer un utilisateur
   const handleDeleteUser = async (userId: string) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.")) {
+      return;
+    }
       try {
-        // Simulation de suppression
-        console.log('Utilisateur supprimé:', userId);
+      // Suppression directe dans Firestore
+      await deleteDoc(doc(db, 'users', userId));
+      await fetchUsers();
         setSuccessMessage('Utilisateur supprimé avec succès !');
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000);
-        
-        // Mettre à jour la liste localement
-        setUsers(users.filter(u => u.id !== userId));
-        setFilteredUsers(filteredUsers.filter(u => u.id !== userId));
-      } catch (error) {
+      setTimeout(() => setSuccessMessage(''), 5000);
+      } catch (error: any) {
         console.error('Erreur lors de la suppression:', error);
-        alert('Erreur lors de la suppression de l\'utilisateur');
-      }
+      setErrorMessage('Erreur lors de la suppression de l\'utilisateur');
     }
   };
 
   // Supprimer plusieurs utilisateurs
   const handleDeleteSelected = async () => {
-    if (selectedUsers.length === 0) return;
-    
-    if (confirm(`Êtes-vous sûr de vouloir supprimer ${selectedUsers.length} utilisateur(s) ?`)) {
+    if (selectedUsers.length === 0) {
+      setErrorMessage('Aucun utilisateur sélectionné');
+      return;
+    }
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${selectedUsers.length} utilisateur(s) ? Cette action est irréversible.`)) {
+      return;
+    }
       try {
-        // Simulation de suppression multiple
-        console.log('Utilisateurs supprimés:', selectedUsers);
-        setSuccessMessage(`${selectedUsers.length} utilisateur(s) supprimé(s) avec succès !`);
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000);
-        
-        // Mettre à jour la liste localement
-        setUsers(users.filter(u => !selectedUsers.includes(u.id)));
-        setFilteredUsers(filteredUsers.filter(u => !selectedUsers.includes(u.id)));
+      // Suppression multiple directe dans Firestore
+      const deletePromises = selectedUsers.map(id => deleteDoc(doc(db, 'users', id)));
+        await Promise.all(deletePromises);
+      await fetchUsers();
         setSelectedUsers([]);
-      } catch (error) {
+      setSuccessMessage(`${selectedUsers.length} utilisateur(s) supprimé(s) avec succès !`);
+      setTimeout(() => setSuccessMessage(''), 5000);
+      } catch (error: any) {
         console.error('Erreur lors de la suppression multiple:', error);
-        alert('Erreur lors de la suppression des utilisateurs');
-      }
+      setErrorMessage('Erreur lors de la suppression des utilisateurs');
     }
   };
 
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'admin':
+      case 'globalAdmin':
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <UserCheck size={12} className="mr-1" />
-            Administrateur
+            Administrateur Global
           </span>
         );
-      case 'vendeur':
+      case 'user':
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
             <Users size={12} className="mr-1" />
-            Vendeur
+            Utilisateur
           </span>
         );
       default:
@@ -433,13 +388,26 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
     );
   };
 
-  if (!user) {
+  // Ajout du contrôle de connexion
+  if (!authLoading && !currentUser) {
     return (
       <div className="p-6 flex items-center justify-center min-h-96">
         <div className="text-center">
           <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-          <p className="text-gray-600">Utilisateur non défini</p>
-          <p className="text-sm text-gray-500 mt-2">Veuillez vous reconnecter</p>
+          <p className="text-gray-600">Vous n'êtes pas connecté.</p>
+          <p className="text-sm text-gray-500 mt-2">Veuillez vous connecter pour accéder à la gestion des utilisateurs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser || (!currentUser.shopId && currentUser.role !== 'admin')) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <p className="text-gray-600">Utilisateur non défini ou shopId manquant</p>
+          <p className="text-sm text-gray-500 mt-2">Veuillez vous reconnecter ou vérifier vos droits d'accès.</p>
         </div>
       </div>
     );
@@ -457,7 +425,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
   }
 
   return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="p-2 sm:p-6 space-y-4 sm:space-y-6">
       {/* Success Message */}
       {showSuccessMessage && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -492,7 +460,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
             Gestion des Utilisateurs
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            {isGlobalAdmin(user) ? 'Gestion de tous les utilisateurs' : `Utilisateurs du shop: ${user.shopName}`}
+            {currentUser?.role === 'admin' ? 'Gestion de tous les utilisateurs' : `Utilisateurs du shop: ${currentUser.shopName || currentUser.shopId}`}
           </p>
         </div>
         <button
@@ -508,44 +476,30 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center">
-            <div className="bg-blue-50 p-2 rounded-lg">
-              <Users size={20} className="text-blue-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Total</p>
-              <p className="text-2xl font-bold text-gray-900">{filteredUsers.length}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-          <div className="flex items-center">
             <div className="bg-purple-50 p-2 rounded-lg">
               <UserCheck size={20} className="text-purple-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Administrateurs</p>
+              <p className="text-sm font-medium text-gray-600">Administrateurs globaux</p>
               <p className="text-2xl font-bold text-gray-900">
-                {filteredUsers.filter(u => u.role === 'admin').length}
+                {filteredUsers.filter(u => u.role === 'admin' || u.role === 'globalAdmin').length}
               </p>
             </div>
           </div>
         </div>
-        
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center">
             <div className="bg-green-50 p-2 rounded-lg">
               <Users size={20} className="text-green-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Vendeurs</p>
+              <p className="text-sm font-medium text-gray-600">Utilisateurs</p>
               <p className="text-2xl font-bold text-gray-900">
-                {filteredUsers.filter(u => u.role === 'vendeur').length}
+                {filteredUsers.filter(u => u.role === 'user').length}
               </p>
             </div>
           </div>
         </div>
-        
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
           <div className="flex items-center">
             <div className="bg-orange-50 p-2 rounded-lg">
@@ -566,7 +520,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
             <Filter size={16} className="text-gray-600" />
             <span className="text-sm font-medium text-gray-700">Filtres:</span>
           </div>
-          
           {/* Recherche */}
           <div className="flex-1">
             <div className="relative">
@@ -576,28 +529,26 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                 placeholder="Rechercher un utilisateur..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
               />
             </div>
           </div>
-          
           {/* Filtre par rôle */}
           <select
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
           >
             <option value="all">Tous les rôles</option>
-            <option value="admin">Administrateurs</option>
-            <option value="vendeur">Vendeurs</option>
+            <option value="admin">Administrateurs de shop</option>
+            <option value="user">Utilisateurs</option>
           </select>
-          
           {/* Filtre par shop (admin global seulement) */}
-          {isGlobalAdmin(user) && (
+          {currentUser?.role === 'admin' && (
             <select
               value={selectedShop}
               onChange={(e) => setSelectedShop(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
             >
               {shops.map((shop) => (
                 <option key={shop.id} value={shop.id}>
@@ -606,12 +557,11 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
               ))}
             </select>
           )}
-          
           {/* Filtre par statut */}
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
           >
             <option value="all">Tous les statuts</option>
             <option value="active">Actifs</option>
@@ -622,7 +572,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
 
       {/* Users Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 sm:p-6 border-b border-gray-200">
+        <div className="p-2 sm:p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base sm:text-lg font-semibold text-gray-900">
@@ -637,7 +587,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                 <span className="text-sm text-gray-600">
                   {selectedUsers.length} sélectionné{selectedUsers.length > 1 ? 's' : ''}
                 </span>
-                <button 
+                <button
                   onClick={handleDeleteSelected}
                   className="text-red-600 hover:text-red-800 text-sm font-medium"
                 >
@@ -647,9 +597,8 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
             )}
           </div>
         </div>
-        
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full text-xs sm:text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 sm:px-6 py-3 text-left">
@@ -735,14 +684,14 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleEditUser(userItem)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-blue-600 hover:text-blue-700"
                           title="Modifier"
                         >
                           <Edit size={16} />
                         </button>
                         <button
                           onClick={() => handleDeleteUser(userItem.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 hover:text-red-700"
                           title="Supprimer"
                         >
                           <Trash2 size={16} />
@@ -788,11 +737,25 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                 </button>
               </div>
 
+              {errorMessage && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4" role="alert">
+                  <strong className="font-bold">Erreur: </strong>
+                  <span className="block sm:inline">{errorMessage}</span>
+                  {/* Affichage du message technique pour debug */}
+                  {typeof errorMessage === 'object' && errorMessage !== null && (
+                    <pre className="mt-2 text-xs text-gray-700">{JSON.stringify(errorMessage, null, 2)}</pre>
+                  )}
+                  {typeof errorMessage === 'string' && errorMessage.startsWith('FirebaseError:') && (
+                    <pre className="mt-2 text-xs text-gray-700">{errorMessage}</pre>
+                  )}
+                </div>
+              )}
+
               <form onSubmit={(e) => { e.preventDefault(); handleSaveUser(); }} className="space-y-4">
                 {/* Email */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email *
+                    Email (pour la connexion) *
                   </label>
                   <input
                     type="email"
@@ -800,7 +763,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="email@exemple.com"
+                    placeholder="identifiant@exemple.com"
                   />
                 </div>
 
@@ -851,7 +814,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Poste *
+                      Postnom *
                     </label>
                     <input
                       type="text"
@@ -859,7 +822,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                       value={formData.poste}
                       onChange={(e) => setFormData({ ...formData, poste: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Poste"
+                      placeholder="Postnom"
                     />
                   </div>
                 </div>
@@ -879,8 +842,27 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                   />
                 </div>
 
+                {/* Mot de passe (toujours affiché, même en modification) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Mot de passe {editingUser ? '' : '*'}
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Minimum 6 caractères"
+                    minLength={6}
+                    required={!editingUser}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {editingUser ? 'Laisse vide pour ne pas changer le mot de passe.' : 'Le mot de passe sera envoyé à l\'utilisateur par email'}
+                  </p>
+                </div>
+
                 {/* Shop (admin global seulement) */}
-                {isGlobalAdmin(user) && (
+                {currentUser?.role === 'admin' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Shop *
@@ -896,7 +878,10 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                           shopName: selectedShop?.name || ''
                         });
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={formData.role === 'admin'}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        formData.role === 'admin' ? 'bg-gray-100 cursor-not-allowed' : ''
+                      }`}
                     >
                       <option value="">Sélectionner un shop</option>
                       {shops.filter(s => s.id !== 'all').map((shop) => (
@@ -905,24 +890,43 @@ export const UsersPage: React.FC<UsersPageProps> = ({ user }) => {
                         </option>
                       ))}
                     </select>
+                    {formData.role === 'admin' && (
+                      <div className="text-xs text-gray-500 mt-2">
+                        Automatiquement défini pour les administrateurs
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Information pour Admin Global */}
+                {formData.role === 'admin' && currentUser?.role === 'admin' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center">
+                      <Building size={16} className="text-blue-600 mr-2" />
+                      <span className="text-sm text-blue-800 font-medium">
+                        Cet administrateur aura accès à tous les shops et toutes les fonctionnalités.
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Cet administrateur aura accès à tous les shops et toutes les fonctionnalités.
+                    </p>
                   </div>
                 )}
 
                 {/* Rôle */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Rôle *
-                  </label>
-                  <select
-                    required
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'vendeur' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="vendeur">Vendeur</option>
-                    <option value="admin">Administrateur</option>
-                  </select>
-                </div>
+                {currentUser?.role === 'admin' && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-1">Rôle</label>
+                    <select
+                      value={formData.role}
+                      onChange={e => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
+                      className="w-full border rounded px-2 py-1"
+                    >
+                      <option value="user">Utilisateur</option>
+                      <option value="admin">Administrateur</option>
+                    </select>
+                  </div>
+                )}
 
                 {/* Boutons */}
                 <div className="flex items-center justify-end space-x-3 pt-4">

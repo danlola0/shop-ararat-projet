@@ -16,7 +16,8 @@ import {
   Calendar
 } from 'lucide-react';
 import { User as UserType, Shop } from '../../types';
-import { shopService, isGlobalAdmin } from '../../services/firestore';
+import { db } from '../../firebase/config';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 interface ShopsPageProps {
   user: UserType;
@@ -30,109 +31,89 @@ interface ShopWithStats extends Shop {
 
 export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
   const [shops, setShops] = useState<ShopWithStats[]>([]);
+  const [filteredShops, setFilteredShops] = useState<ShopWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingShop, setEditingShop] = useState<Shop | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [showSuccess, setShowSuccess] = useState('');
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
     location: '',
-    phone: '',
-    manager: '',
     description: ''
   });
 
-  // Récupérer les shops
-  const fetchShops = async () => {
+  // Définir fetchShopsData dans le scope du composant pour qu'il soit accessible partout
+  const fetchShopsData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      let shopsData: Shop[];
+      // Récupération directe depuis Firestore
+      const [shopsSnapshot, usersSnapshot, echangesSnapshot, creditsSnapshot, depotsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'shops')),
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'echanges')),
+        getDocs(collection(db, 'ventes_credit')),
+        getDocs(collection(db, 'depots'))
+      ]);
+      const shopsDocs = shopsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (isGlobalAdmin(user)) {
-        console.log('Récupération de tous les shops pour admin global...');
-        shopsData = await shopService.getAll();
-        console.log('Shops récupérés:', shopsData);
-      } else {
-        console.log('Récupération du shop pour admin local:', user.shopId);
-        // Pour les admins de shop, montrer seulement leur shop
-        shopsData = [{
-          id: user.shopId,
-          name: user.shopName,
-          location: 'Localisation du shop',
-          createdAt: new Date().toISOString()
-        }];
-      }
+      // Filtrer selon le rôle de l'utilisateur
+      const filterByRole = (docs, user) => {
+        return docs.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(item => user.role === 'admin' || item.shopId === user.shopId);
+      };
 
-      // Ajouter des statistiques simulées pour l'exemple
-      const shopsWithStats: ShopWithStats[] = shopsData.map(shop => ({
-        ...shop,
-        usersCount: Math.floor(Math.random() * 10) + 1,
-        revenue: Math.floor(Math.random() * 50000) + 10000,
-        transactionsCount: Math.floor(Math.random() * 100) + 20
-      }));
+      const allUsers = filterByRole(usersSnapshot, user);
+      const allEchanges = filterByRole(echangesSnapshot, user);
+      const allCredits = filterByRole(creditsSnapshot, user);
+      const allDepots = filterByRole(depotsSnapshot, user);
 
-      setShops(shopsWithStats);
+      // Créer une liste de shops basée sur tous les shops enregistrés
+      const shopsList = shopsDocs.map(shopDoc => {
+        const id = shopDoc.id;
+        return {
+          id,
+          name: shopDoc.name || 'Shop sans nom',
+          location: shopDoc.location || '',
+          description: shopDoc.description || '',
+          createdAt: shopDoc.createdAt || new Date().toISOString(),
+          usersCount: allUsers.filter(u => u.shopId === id && u.role === 'user').length,
+          revenue: allEchanges.filter(e => e.shopId === id).reduce((sum, item) => sum + (item.montantDepart || 0), 0) +
+                  allCredits.filter(c => c.shopId === id).reduce((sum, item) => sum + (item.montant || 0), 0) +
+                  allDepots.filter(d => d.shopId === id).reduce((sum, item) => sum + (item.montant || 0), 0),
+          transactionsCount: allEchanges.filter(e => e.shopId === id).length +
+                            allCredits.filter(c => c.shopId === id).length +
+                            allDepots.filter(d => d.shopId === id).length
+        };
+      });
+
+      setShops(shopsList);
+      setFilteredShops(shopsList);
     } catch (error: any) {
-      console.error('Erreur détaillée lors de la récupération des shops:', error);
-      console.error('Code d\'erreur:', error.code);
-      console.error('Message d\'erreur:', error.message);
-      
-      let errorMsg = 'Erreur lors de la récupération des shops';
-      
-      if (error.code === 'permission-denied') {
-        errorMsg = 'Permission refusée. Vérifiez les règles Firestore pour la collection "shops".';
-        setShowPermissionAlert(true);
-        
-        // Données de démonstration en cas d'erreur de permission
-        const demoShops: ShopWithStats[] = [
-          {
-            id: 'demo-shop-1',
-            name: 'Shop Central',
-            location: 'Kinshasa, RDC',
-            phone: '+243 123 456 789',
-            manager: 'Jean Dupont',
-            description: 'Shop principal au centre-ville',
-            createdAt: new Date().toISOString(),
-            usersCount: 8,
-            revenue: 45000,
-            transactionsCount: 85
-          },
-          {
-            id: 'demo-shop-2',
-            name: 'Shop Nord',
-            location: 'Lubumbashi, RDC',
-            phone: '+243 987 654 321',
-            manager: 'Marie Martin',
-            description: 'Shop dans le quartier nord',
-            createdAt: new Date().toISOString(),
-            usersCount: 5,
-            revenue: 32000,
-            transactionsCount: 62
-          }
-        ];
-        setShops(demoShops);
-      } else if (error.code === 'unavailable') {
-        errorMsg = 'Service Firebase temporairement indisponible.';
-      } else if (error.message) {
-        errorMsg = `Erreur: ${error.message}`;
-      }
-      
-      setErrorMessage(errorMsg);
-      setShowError(true);
-      setTimeout(() => setShowError(false), 8000);
+      console.error('ShopsPage: Erreur lors de la récupération des données:', error);
+      setErrorMessage('Erreur lors de la récupération des données');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchShops();
+    fetchShopsData();
   }, [user]);
+
+  useEffect(() => {
+    const results = shops.filter(shop =>
+      shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (shop.location && shop.location.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    setFilteredShops(results);
+  }, [searchTerm, shops]);
 
   // Gérer l'ouverture du modal
   const handleOpenModal = (shop?: Shop) => {
@@ -141,17 +122,13 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
       setFormData({
         name: shop.name,
         location: shop.location || '',
-        phone: '',
-        manager: '',
-        description: ''
+        description: shop.description || ''
       });
     } else {
       setEditingShop(null);
       setFormData({
         name: '',
         location: '',
-        phone: '',
-        manager: '',
         description: ''
       });
     }
@@ -161,47 +138,57 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
   // Gérer la soumission du formulaire
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (isSubmitting) return; // Protection contre double-clic
+    setIsSubmitting(true);
+
     if (!formData.name.trim()) {
       setErrorMessage('Le nom du shop est requis');
       setShowError(true);
       setTimeout(() => setShowError(false), 5000);
+      setIsSubmitting(false);
       return;
     }
 
     try {
-      if (editingShop) {
-        // Modification
-        await shopService.update(editingShop.id, {
-          name: formData.name,
-          location: formData.location,
-          phone: formData.phone,
-          manager: formData.manager,
-          description: formData.description
-        });
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 5000);
-      } else {
-        // Création
-        await shopService.create({
-          name: formData.name,
-          location: formData.location,
-          phone: formData.phone,
-          manager: formData.manager,
-          description: formData.description,
-          createdAt: new Date().toISOString()
-        });
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 5000);
-      }
+      // Création directe dans Firestore
+      const shopRef = await addDoc(collection(db, 'shops'), {
+        name: formData.name,
+        location: formData.location,
+        description: formData.description,
+        createdAt: new Date().toISOString()
+      });
+      const shopId = shopRef.id;
 
+      // Création automatique des collections associées (documents placeholder)
+      await Promise.all([
+        // Mouvement initial
+        addDoc(collection(db, 'mouvements'), {
+          shopId,
+          type: 'init',
+          montant: 0,
+          date: new Date().toISOString(),
+          createdAt: new Date().toISOString()
+        }),
+        // Stock initial
+        addDoc(collection(db, 'stocks'), {
+          shopId,
+          stockFinal: 0,
+          devise: 'CDF',
+          type: 'init',
+          date: new Date().toISOString(),
+          createdAt: new Date().toISOString()
+        })
+      ]);
+      
+      await fetchShopsData(); // Rafraîchir la liste après création
+      setShowSuccess('Le shop a été créé avec succès et les collections associées ont été initialisées !');
+      setTimeout(() => setShowSuccess(false), 6000);
       setShowModal(false);
-      fetchShops();
     } catch (error: any) {
       console.error('Erreur lors de la sauvegarde:', error);
-      setErrorMessage(error.message || 'Erreur lors de la sauvegarde');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
+      setErrorMessage('Erreur lors de la sauvegarde du shop');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -210,38 +197,34 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
     if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce shop ? Cette action est irréversible.')) {
       return;
     }
-
     try {
-      await shopService.delete(shopId);
+      // Supprimer ou commenter les lignes suivantes :
+      // await shopService.delete(shopId);
+      
+      // Suppression directe dans Firestore
+      await deleteDoc(doc(db, 'shops', shopId));
+      await fetchShopsData(); // Rafraîchir la liste après suppression
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
-      fetchShops();
     } catch (error: any) {
       console.error('Erreur lors de la suppression:', error);
-      setErrorMessage(error.message || 'Erreur lors de la suppression');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
+      setErrorMessage('Erreur lors de la suppression du shop');
     }
   };
 
-  // Filtrer les shops
-  const filteredShops = shops.filter(shop =>
-    shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    shop.location.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Formater la date
   const formatDate = (dateString: string) => {
+    if (!dateString || isNaN(new Date(dateString).getTime())) {
+      return '-';
+    }
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
 
-  // Formater la monnaie
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'CDF',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -252,9 +235,7 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center">
             <CheckCircle size={16} className="text-green-600 mr-2" />
-            <p className="text-sm text-green-800">
-              {editingShop ? 'Shop modifié avec succès !' : 'Shop créé avec succès !'}
-            </p>
+            <p className="text-sm text-green-800">{showSuccess}</p>
           </div>
         </div>
       )}
@@ -301,10 +282,10 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
             Gestion des Shops
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            {isGlobalAdmin(user) ? 'Gestion de tous les shops' : `Gestion du shop: ${user.shopName}`}
+            {user.role === 'admin' ? 'Gestion de tous les shops' : `Gestion du shop: ${user.shopName}`}
           </p>
         </div>
-        {isGlobalAdmin(user) && (
+        {user.role === 'admin' && (
           <button
             onClick={() => handleOpenModal()}
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2 text-sm"
@@ -367,7 +348,7 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
                     <p className="text-sm text-gray-600">{shop.location}</p>
                   </div>
                 </div>
-                {isGlobalAdmin(user) && (
+                {user.role === 'admin' && (
                   <div className="flex items-center space-x-1">
                     <button
                       onClick={() => handleOpenModal(shop)}
@@ -388,20 +369,26 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
               </div>
 
               {/* Statistiques */}
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-indigo-600">{shop.usersCount}</p>
-                  <p className="text-xs text-gray-600">Utilisateurs</p>
+              {(shop.usersCount === 0 && shop.revenue === 0 && shop.transactionsCount === 0) ? (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4 text-center text-base font-semibold mb-4">
+                  Aucune donnée pour ce shop.<br />Ajoutez des utilisateurs ou effectuez des opérations pour voir les indicateurs.
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(shop.revenue)}</p>
-                  <p className="text-xs text-gray-600">Revenus</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-indigo-600">{shop.usersCount}</p>
+                    <p className="text-xs text-gray-600">Utilisateurs</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{formatCurrency(shop.revenue)}</p>
+                    <p className="text-xs text-gray-600">Revenus</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{shop.transactionsCount}</p>
+                    <p className="text-xs text-gray-600">Transactions</p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-blue-600">{shop.transactionsCount}</p>
-                  <p className="text-xs text-gray-600">Transactions</p>
-                </div>
-              </div>
+              )}
 
               {/* Informations supplémentaires */}
               <div className="space-y-2 text-sm text-gray-600">
@@ -409,18 +396,6 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
                   <Calendar size={14} />
                   <span>Créé le {formatDate(shop.createdAt)}</span>
                 </div>
-                {shop.phone && (
-                  <div className="flex items-center space-x-2">
-                    <Phone size={14} />
-                    <span>{shop.phone}</span>
-                  </div>
-                )}
-                {shop.manager && (
-                  <div className="flex items-center space-x-2">
-                    <User size={14} />
-                    <span>Manager: {shop.manager}</span>
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -473,32 +448,6 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Téléphone
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                  placeholder="+243 123 456 789"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Manager
-                </label>
-                <input
-                  type="text"
-                  value={formData.manager}
-                  onChange={(e) => setFormData({...formData, manager: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                  placeholder="Nom du manager"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description
                 </label>
                 <textarea
@@ -521,8 +470,9 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
                 <button
                   type="submit"
                   className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm"
+                  disabled={isSubmitting}
                 >
-                  {editingShop ? 'Modifier' : 'Créer'}
+                  {isSubmitting ? (editingShop ? 'Modification...' : 'Création...') : (editingShop ? 'Modifier' : 'Créer')}
                 </button>
               </div>
             </form>
