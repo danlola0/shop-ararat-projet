@@ -149,6 +149,13 @@ def generate_report():
         # Upload vers Firebase Storage
         download_url = excel_gen.upload_to_firebase(filename, "reports")
         
+        if not download_url:
+            print("⚠️ Échec de l'upload vers Firebase Storage")
+            # Créer une URL temporaire pour le fichier local
+            download_url = f"/api/download-report/{filename}"
+        else:
+            print(f"✅ Fichier uploadé vers Firebase: {download_url}")
+        
         return jsonify({
             "success": True,
             "filename": filename,
@@ -190,20 +197,33 @@ def download_report(filename):
 
 @app.route('/api/list-reports', methods=['GET'])
 def list_reports():
-    """Lister tous les rapports disponibles"""
+    """Lister tous les rapports disponibles depuis Firebase Storage"""
     try:
+        from config import get_storage_client
+        
+        storage_client = get_storage_client()
+        bucket = storage_client.bucket()
+        
         reports = []
-        if os.path.exists(REPORTS_FOLDER):
-            for filename in os.listdir(REPORTS_FOLDER):
-                if filename.endswith('.xlsx'):
-                    filepath = os.path.join(REPORTS_FOLDER, filename)
-                    stats = os.stat(filepath)
-                    reports.append({
-                        "filename": filename,
-                        "size": f"{stats.st_size / 1024 / 1024:.1f} MB",
-                        "createdAt": datetime.fromtimestamp(stats.st_ctime).isoformat(),
-                        "downloadUrl": f"/api/download-report/{filename}"
-                    })
+        blobs = bucket.list_blobs(prefix='reports/')
+        
+        for blob in blobs:
+            if blob.name.endswith('.xlsx'):
+                filename = blob.name.split('/')[-1]
+                reports.append({
+                    "filename": filename,
+                    "size": f"{blob.size / 1024 / 1024:.1f} MB",
+                    "createdAt": blob.time_created.isoformat(),
+                    "downloadUrl": blob.generate_signed_url(
+                        version="v4",
+                        expiration=3600,  # 1 heure
+                        method="GET"
+                    ),
+                    "shopName": "Shop"  # Par défaut
+                })
+        
+        # Trier par date de création (plus récent en premier)
+        reports.sort(key=lambda x: x['createdAt'], reverse=True)
         
         return jsonify({
             "success": True,
@@ -211,6 +231,7 @@ def list_reports():
         })
         
     except Exception as e:
+        print(f"Erreur list-reports: {e}")
         return jsonify({
             "success": False,
             "error": str(e)
