@@ -58,7 +58,7 @@ def get_firestore_client():
     return firestore.client()
 
 def get_storage_client():
-    """Retourne le bucket Storage"""
+    """Retourne le bucket Storage - Version corrigée"""
     return storage.bucket()
 
 # Instructions pour l'utilisateur
