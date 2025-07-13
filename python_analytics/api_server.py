@@ -201,8 +201,7 @@ def list_reports():
     try:
         from config import get_storage_client
         
-        storage_client = get_storage_client()
-        bucket = storage_client.bucket()
+        bucket = get_storage_client()
         
         reports = []
         blobs = bucket.list_blobs(prefix='reports/')

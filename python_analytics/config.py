@@ -58,8 +58,8 @@ def get_firestore_client():
     return firestore.client()
 
 def get_storage_client():
-    """Retourne le client Storage"""
-    return storage.client()
+    """Retourne le bucket Storage"""
+    return storage.bucket()
 
 # Instructions pour l'utilisateur
 print("🔧 Configuration Firebase")
