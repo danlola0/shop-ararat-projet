@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../../firebase/config';
 import { collection, getDocs, doc, getDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
-import { Download, Printer, FileSpreadsheet, Calendar, TrendingUp } from 'lucide-react';
+import { Download, Printer, FileSpreadsheet, Calendar, TrendingUp, DollarSign, Calculator } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import axios from 'axios';
@@ -576,7 +576,7 @@ const SynthesePage: React.FC = () => {
     // eslint-disable-next-line
   }, []);
 
-  const generateExcelReport = async (reportType: 'daily' | 'monthly' | 'custom') => {
+  const generateExcelReport = async (reportType: 'daily' | 'monthly' | 'yearly' | 'custom') => {
     setGeneratingReport(true);
     setReportStatus('Génération du rapport en cours...');
 
@@ -597,6 +597,13 @@ const SynthesePage: React.FC = () => {
         startDate = first.toISOString().split('T')[0];
         endDate = last.toISOString().split('T')[0];
         periodLabel = `mensuel_${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, '0')}`;
+      } else if (reportType === 'yearly') {
+        const dateObj = new Date(selectedDate);
+        const first = new Date(dateObj.getFullYear(), 0, 1); // 1er janvier
+        const last = new Date(dateObj.getFullYear(), 11, 31); // 31 décembre
+        startDate = first.toISOString().split('T')[0];
+        endDate = last.toISOString().split('T')[0];
+        periodLabel = `annuel_${dateObj.getFullYear()}`;
       } else {
         // Custom - utiliser la période sélectionnée
         const dateObj = new Date(selectedDate);
@@ -651,133 +658,194 @@ const SynthesePage: React.FC = () => {
   };
 
   const downloadReport = (report: any) => {
-    window.open(report.downloadUrl, '_blank');
+    // Créer un élément <a> temporaire pour forcer le téléchargement
+    const link = document.createElement('a');
+    link.href = report.downloadUrl;
+    link.download = report.name; // Nom du fichier à télécharger
+    link.target = '_blank';
+    
+    // Ajouter l'élément au DOM, cliquer dessus, puis le supprimer
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
-    <div className="p-2 sm:p-6 max-w-4xl mx-auto w-full max-w-full overflow-x-hidden">
-      <h1 className="text-2xl font-bold mb-6">Synthèse Financière</h1>
-      
-      {/* Informations du shop et de la date */}
-      <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200 w-full max-w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 w-full max-w-full">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-x-hidden">
+      {/* En-tête moderne avec gradient */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-4 sm:p-6 mb-6 text-white shadow-lg">
+        <div className="flex items-center gap-3">
+          <TrendingUp size={28} className="text-yellow-300 sm:w-8 sm:h-8" />
           <div>
-            <h2 className="text-lg font-semibold text-blue-900">
-              {shops.find(s => s.id === selectedShopId)?.name || 'Shop sélectionné'}
-            </h2>
-            <p className="text-sm text-blue-700">
-              Date de la synthèse : {new Date(selectedDate).toLocaleDateString('fr-FR')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              onClick={() => window.print()}
-            >
-              <Printer size={16} />
-              Imprimer
-            </button>
-            <button
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-              onClick={handleExport}
-            >
-              <Download size={16} />
-              Exporter
-            </button>
+            <h1 className="text-2xl sm:text-3xl font-bold">Synthèse Financière</h1>
+            <p className="text-blue-100 text-sm sm:text-base">Vue d'ensemble de vos performances</p>
           </div>
         </div>
       </div>
       
-      <div className="flex flex-col xs:flex-row items-center gap-2 mb-4 w-full max-w-full">
-        {(currentUser?.role === 'admin' || currentUser?.role === 'globalAdmin') && (
-          <select
-            value={selectedShopId}
-            onChange={e => setSelectedShopId(e.target.value)}
-            className="border rounded px-2 py-1"
-          >
-            {shops.map(shop => (
-              <option key={shop.id} value={shop.id}>{shop.name}</option>
-            ))}
-          </select>
-        )}
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={e => setSelectedDate(e.target.value)}
-          className="border rounded px-2 py-1"
-        />
-        <select
-          value={selectedPeriod}
-          onChange={e => setSelectedPeriod(e.target.value as any)}
-          className="border rounded px-2 py-1"
-        >
-          <option value="jour">Jour</option>
-          <option value="semaine">Semaine</option>
-          <option value="mois">Mois</option>
-          <option value="annee">Année</option>
-        </select>
-        <span className="text-sm text-gray-600">Période</span>
-        <span className="text-sm text-gray-600">Date de la synthèse</span>
+      {/* Informations du shop et de la date - Design moderne */}
+      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6 border border-gray-200">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-100 p-2 rounded-full">
+              <TrendingUp size={20} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {shops.find(s => s.id === selectedShopId)?.name || 'Shop sélectionné'}
+              </h2>
+              <p className="text-sm text-gray-600">
+                Date : {new Date(selectedDate).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Section des filtres - Design moderne */}
+      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6 border border-gray-200">
+        <div className="flex items-center gap-3 mb-4">
+          <Calendar size={24} className="text-blue-600" />
+          <h2 className="text-xl font-bold text-gray-900">Filtres de synthèse</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {(currentUser?.role === 'admin' || currentUser?.role === 'globalAdmin') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sélectionner un shop</label>
+              <select
+                value={selectedShopId}
+                onChange={e => setSelectedShopId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              >
+                {shops.map(shop => (
+                  <option key={shop.id} value={shop.id}>{shop.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date de la synthèse</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            />
+          </div>
+        </div>
       </div>
       
       {loading ? (
-        <div className="text-center py-8 text-blue-700 font-semibold">Chargement des données...</div>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-blue-700 font-semibold">Chargement des données...</p>
+          </div>
+        </div>
       ) : (
         <>
-          {/* Message si aucune donnée */}
+          {/* Message si aucune donnée - Design moderne */}
           {noData && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-8 mb-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold text-yellow-800 mb-2">
+                <div className="bg-yellow-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <TrendingUp size={32} className="text-yellow-600" />
+                </div>
+                <h3 className="text-xl font-bold text-yellow-800 mb-3">
                   Aucune donnée disponible
                 </h3>
-                <p className="text-yellow-700">
-                  Aucune donnée disponible pour le shop "{shops.find(s => s.id === selectedShopId)?.name}" 
-                  à la date du {new Date(selectedDate).toLocaleDateString('fr-FR')}.
+                <p className="text-yellow-700 max-w-md mx-auto">
+                  Aucune donnée disponible pour le shop <strong>"{shops.find(s => s.id === selectedShopId)?.name}"</strong> 
+                  à la date du <strong>{new Date(selectedDate).toLocaleDateString('fr-FR')}</strong>.
                 </p>
               </div>
             </div>
           )}
           
-          <div className="bg-white rounded-xl shadow p-4 sm:p-6 mb-8 border border-blue-100 w-full max-w-full">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-6 w-full max-w-full">
-              <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Total Général Aujourd'hui</span>
-                <span className="text-xl font-bold text-blue-700">
-                  {noData ? '0,00' : totalGeneralToday.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
-                </span>
+          {/* Cartes de statistiques modernes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
+            {/* Carte Total Général Aujourd'hui */}
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-l-4 border-blue-500 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">Total Général Aujourd'hui</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {noData ? '0,00' : totalGeneralToday.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                  </p>
+                </div>
+                <div className="bg-blue-100 p-3 rounded-full">
+                  <TrendingUp size={24} className="text-blue-600" />
+                </div>
               </div>
-              <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Total Général Antérieur</span>
-                <span className="text-xl font-bold text-blue-700">
-                  {noData ? '0,00' : totalGeneralAnterieur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
-                </span>
+            </div>
+
+            {/* Carte Total Général Antérieur */}
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-l-4 border-purple-500 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">Total Général Antérieur</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {noData ? '0,00' : totalGeneralAnterieur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                  </p>
+                </div>
+                <div className="bg-purple-100 p-3 rounded-full">
+                  <Calendar size={24} className="text-purple-600" />
+                </div>
               </div>
-              <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Variation (Entrées - Sorties)</span>
-                <span className={"text-xl font-bold " + (noData || variation >= 0 ? 'text-green-600' : 'text-red-600')}>
-                  {noData ? '0,00' : (variation >= 0 ? '+' : '') + variation.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
-                </span>
+            </div>
+
+            {/* Carte Variation */}
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-l-4 border-green-500 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">Variation</p>
+                  <p className={"text-xl sm:text-2xl font-bold " + (noData || variation >= 0 ? 'text-green-600' : 'text-red-600')}>
+                    {noData ? '0,00' : (variation >= 0 ? '+' : '') + variation.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                  </p>
+                </div>
+                <div className="bg-green-100 p-3 rounded-full">
+                  <TrendingUp size={24} className="text-green-600" />
+                </div>
               </div>
-              <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Total Antérieur Ajusté</span>
-                {totalGeneralAnterieur !== 0 ? (
-                  <span className="text-xl font-bold text-blue-700">
-                    {noData ? '0,00' : totalGeneralAjuste.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
-                  </span>
-                ) : (
-                  <span className="text-sm text-yellow-700 font-semibold text-center block px-2">Non calculé</span>
-                )}
+            </div>
+
+            {/* Carte Total Antérieur Ajusté */}
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-l-4 border-orange-500 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">Total Antérieur Ajusté</p>
+                  {totalGeneralAnterieur !== 0 ? (
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {noData ? '0,00' : totalGeneralAjuste.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                    </p>
+                  ) : (
+                    <p className="text-sm text-yellow-600 font-semibold">Non calculé</p>
+                  )}
+                </div>
+                <div className="bg-orange-100 p-3 rounded-full">
+                  <Calculator size={24} className="text-orange-600" />
+                </div>
               </div>
-              <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Bénéfice Net</span>
-                {totalGeneralAnterieur !== 0 ? (
-                  <span className={"text-2xl font-extrabold " + (noData || beneficeNet >= 0 ? 'text-green-700' : 'text-red-600')}>
-                    {noData ? '0,00' : beneficeNet.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
-                  </span>
-                ) : (
-                  <span className="text-sm text-yellow-700 font-semibold text-center block px-2">Bénéfice net non calculé</span>
-                )}
+            </div>
+
+            {/* Carte Bénéfice Net */}
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-l-4 border-emerald-500 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">Bénéfice Net</p>
+                  {totalGeneralAnterieur !== 0 ? (
+                    <p className={"text-xl sm:text-2xl font-bold " + (noData || beneficeNet >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                      {noData ? '0,00' : beneficeNet.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                    </p>
+                  ) : (
+                    <p className="text-sm text-yellow-600 font-semibold">Non calculé</p>
+                  )}
+                </div>
+                <div className="bg-emerald-100 p-3 rounded-full">
+                  <DollarSign size={24} className="text-emerald-600" />
+                </div>
               </div>
             </div>
           </div>
@@ -788,33 +856,41 @@ const SynthesePage: React.FC = () => {
               Période : Toute l'historique
             </div>
           )}
-          {/* Nouveau tableau du bénéfice net uniquement */}
+          {/* Nouveau tableau du bénéfice net uniquement - Design moderne */}
           {totalGeneralAnterieur !== 0 ? (
-            <div className="bg-green-50 rounded-xl shadow p-4 sm:p-6 mb-8 border border-green-200 w-full max-w-full overflow-x-auto">
-              <h2 className="text-lg font-bold mb-4 text-green-800">Tableau du Bénéfice Net</h2>
-              <div className="w-full max-w-full overflow-x-auto">
-                <table className="min-w-full divide-y divide-green-200 text-xs sm:text-sm">
-                  <thead>
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl shadow-lg p-4 sm:p-6 mb-8 border border-green-200">
+              <div className="flex items-center gap-3 mb-4">
+                <DollarSign size={24} className="text-green-600" />
+                <h2 className="text-xl font-bold text-green-800">Tableau du Bénéfice Net</h2>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                <table className="min-w-full divide-y divide-green-200">
+                  <thead className="bg-green-50">
                     <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase">Bénéfice Net</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase">Devise</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-green-700 uppercase tracking-wider">Bénéfice Net</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-green-700 uppercase tracking-wider">Devise</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr>
-                      <td className="px-4 py-2 font-bold text-green-900 text-xl">
+                  <tbody className="bg-white divide-y divide-green-100">
+                    <tr className="hover:bg-green-50 transition-colors">
+                      <td className="px-4 py-4 font-bold text-green-900 text-xl">
                         {noData ? '0,00' : beneficeNet.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-4 py-2 text-green-700 font-semibold">$</td>
+                      <td className="px-4 py-4 text-green-700 font-semibold">$</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             </div>
           ) : (
-            <div className="bg-yellow-50 rounded-xl shadow p-6 mb-8 border border-yellow-200 text-yellow-800 text-center">
-              <h2 className="text-lg font-bold mb-2">Bénéfice net non calculé</h2>
-              <p>Le bénéfice net n'est pas affiché car le Total Général Antérieur est nul (aucune base de comparaison).</p>
+            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl shadow-lg p-6 mb-8 border border-yellow-200">
+              <div className="text-center">
+                <div className="bg-yellow-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Calculator size={32} className="text-yellow-600" />
+                </div>
+                <h2 className="text-xl font-bold text-yellow-800 mb-2">Bénéfice net non calculé</h2>
+                <p className="text-yellow-700">Le bénéfice net n'est pas affiché car le Total Général Antérieur est nul (aucune base de comparaison).</p>
+              </div>
             </div>
           )}
           
@@ -868,30 +944,49 @@ const SynthesePage: React.FC = () => {
             </div>
           )}
 
-          <div className="bg-white rounded-xl shadow p-4 sm:p-6 border border-gray-100 w-full max-w-full overflow-x-auto">
-            <h2 className="text-lg font-bold mb-4">Détail des mouvements</h2>
-            <div className="w-full max-w-full overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
-                <thead>
+          {/* Tableau des mouvements - Design moderne */}
+          <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp size={24} className="text-blue-600" />
+              <h2 className="text-xl font-bold text-gray-900">Détail des mouvements</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Montant</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 uppercase tracking-wider">Type</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 uppercase tracking-wider">Montant</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 uppercase tracking-wider">Description</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="bg-white divide-y divide-gray-100">
                   {(noData || mouvements.length === 0) && (
                     <tr>
-                      <td colSpan={3} className="text-center text-gray-400 py-4">
-                        {noData ? 'Aucune donnée disponible pour cette date' : 'Aucun mouvement'}
+                      <td colSpan={3} className="text-center text-gray-400 py-8">
+                        <div className="flex flex-col items-center gap-2">
+                          <TrendingUp size={32} className="text-gray-300" />
+                          <span className="text-sm">
+                            {noData ? 'Aucune donnée disponible pour cette date' : 'Aucun mouvement'}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   )}
                   {mouvements.map((mvt, idx) => (
-                    <tr key={idx}>
-                      <td className={"px-4 py-2 font-semibold " + (mvt.operation === 'Entrée' ? 'text-green-700' : 'text-red-700')}>{mvt.operation}</td>
-                      <td className="px-4 py-2">{mvt.montant.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $</td>
-                      <td className="px-4 py-2">{mvt.description}</td>
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          mvt.operation === 'Entrée' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {mvt.operation}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">
+                        {mvt.montant.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{mvt.description}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -901,94 +996,143 @@ const SynthesePage: React.FC = () => {
         </>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
-        <button
-          onClick={handleExport}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
-        >
-          <Printer size={16} />
-          Exporter PDF
-        </button>
-        <button
-          onClick={() => window.print()}
-          className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
-        >
-          <Download size={16} />
-          Imprimer
-        </button>
+      {/* Section des boutons de rapports - Design moderne - TOUJOURS VISIBLE */}
+      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6 border border-gray-200">
+        <div className="flex items-center gap-3 mb-4">
+          <FileSpreadsheet size={24} className="text-green-600" />
+          <h2 className="text-xl font-bold text-gray-900">Génération de Rapports Excel</h2>
+        </div>
         
-        {/* Nouveaux boutons pour les rapports Excel */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Bouton Rapport Quotidien */}
           <button
             onClick={() => generateExcelReport('daily')}
             disabled={generatingReport}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
+            className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-500 text-white p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none"
           >
-            <FileSpreadsheet size={16} />
-            Rapport Quotidien
+            <div className="flex items-center gap-3">
+              <FileSpreadsheet size={24} />
+              <div className="text-left">
+                <h3 className="font-semibold">Rapport Quotidien</h3>
+                <p className="text-sm opacity-90">Données du jour</p>
+              </div>
+            </div>
           </button>
+
+          {/* Bouton Rapport Mensuel */}
           <button
             onClick={() => generateExcelReport('monthly')}
             disabled={generatingReport}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
+            className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none"
           >
-            <Calendar size={16} />
-            Rapport Mensuel
+            <div className="flex items-center gap-3">
+              <Calendar size={24} />
+              <div className="text-left">
+                <h3 className="font-semibold">Rapport Mensuel</h3>
+                <p className="text-sm opacity-90">Synthèse mensuelle</p>
+              </div>
+            </div>
           </button>
+
+          {/* Bouton Rapport Annuel */}
+          <button
+            onClick={() => generateExcelReport('yearly')}
+            disabled={generatingReport}
+            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none"
+          >
+            <div className="flex items-center gap-3">
+              <Calendar size={24} />
+              <div className="text-left">
+                <h3 className="font-semibold">Rapport Annuel</h3>
+                <p className="text-sm opacity-90">Synthèse annuelle</p>
+              </div>
+            </div>
+          </button>
+
+          {/* Bouton Rapport Personnalisé */}
           <button
             onClick={() => generateExcelReport('custom')}
             disabled={generatingReport}
-            className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
+            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-500 text-white p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none"
           >
-            <TrendingUp size={16} />
-            Rapport Personnalisé
+            <div className="flex items-center gap-3">
+              <TrendingUp size={24} />
+              <div className="text-left">
+                <h3 className="font-semibold">Rapport Personnalisé</h3>
+                <p className="text-sm opacity-90">Période choisie</p>
+              </div>
+            </div>
           </button>
         </div>
       </div>
 
-      {/* Status des rapports */}
+      {/* Status des rapports - Design moderne */}
       {reportStatus && (
-        <div className="mb-4 p-3 rounded-lg text-sm font-medium text-center">
+        <div className="mb-6">
           {reportStatus.includes('✅') ? (
-            <div className="bg-green-50 border border-green-200 text-green-800">
-              {reportStatus}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <div className="bg-green-100 p-2 rounded-full">
+                  <FileSpreadsheet size={20} className="text-green-600" />
+                </div>
+                <span className="text-green-800 font-medium">{reportStatus}</span>
+              </div>
             </div>
           ) : reportStatus.includes('❌') ? (
-            <div className="bg-red-50 border border-red-200 text-red-800">
-              {reportStatus}
+            <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <div className="bg-red-100 p-2 rounded-full">
+                  <FileSpreadsheet size={20} className="text-red-600" />
+                </div>
+                <span className="text-red-800 font-medium">{reportStatus}</span>
+              </div>
             </div>
           ) : (
-            <div className="bg-blue-50 border border-blue-200 text-blue-800">
-              {reportStatus}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <div className="bg-blue-100 p-2 rounded-full">
+                  <FileSpreadsheet size={20} className="text-blue-600" />
+                </div>
+                <span className="text-blue-800 font-medium">{reportStatus}</span>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Section des rapports disponibles */}
+      {/* Section des rapports disponibles - Design moderne */}
       {availableReports.length > 0 && (
-        <div className="bg-white rounded-xl shadow p-4 sm:p-6 mb-8 border border-gray-100">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <FileSpreadsheet size={20} className="text-green-600" />
-            Rapports Excel Disponibles
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-8 border border-gray-200">
+          <div className="flex items-center gap-3 mb-6">
+            <FileSpreadsheet size={24} className="text-green-600" />
+            <h2 className="text-xl font-bold text-gray-900">Rapports Excel Disponibles</h2>
+            <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+              {availableReports.length} rapport{availableReports.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {availableReports.map((report) => (
-              <div key={report.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900 text-sm">{report.name}</h3>
-                  <span className="text-xs text-gray-500">{report.size}</span>
+              <div key={report.id} className="border border-gray-200 rounded-xl p-4 hover:border-green-300 hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-white to-gray-50">
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">{report.name}</h3>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{report.size}</span>
                 </div>
-                <div className="text-xs text-gray-600 mb-3">
-                  <p><strong>Shop:</strong> {report.shopName}</p>
-                  <p><strong>Période:</strong> {report.period}</p>
-                  <p><strong>Généré:</strong> {report.generatedAt}</p>
+                <div className="text-xs text-gray-600 mb-4 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    <span><strong>Shop:</strong> {report.shopName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                    <span><strong>Généré:</strong> {new Date(report.generatedAt).toLocaleString('fr-FR')}</span>
+                  </div>
                 </div>
                 <button
                   onClick={() => downloadReport(report)}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm flex items-center justify-center gap-2 transition-colors"
+                  className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-4 py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-105"
                 >
-                  <Download size={14} />
+                  <Download size={16} />
                   Télécharger
                 </button>
               </div>

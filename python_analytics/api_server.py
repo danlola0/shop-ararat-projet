@@ -42,10 +42,12 @@ def generate_report():
     """Générer un rapport Excel"""
     try:
         data = request.json
-        report_type = data.get('type', 'custom')
+        report_type = data.get('type', 'custom')  # React envoie 'type'
         shop_id = data.get('shopId', 'all')
         start_date = data.get('startDate')
         end_date = data.get('endDate')
+        
+        print(f"📊 Données reçues: type={report_type}, shop={shop_id}, dates={start_date} à {end_date}")
         
         print(f"Génération rapport: {report_type} pour shop {shop_id}")
         
@@ -53,6 +55,32 @@ def generate_report():
         extractor = DataExtractor()
         analyzer = DataAnalyzer()
         excel_gen = ExcelGenerator()
+        
+        # Définir les dates selon le type de rapport
+        today = datetime.now().strftime("%Y-%m-%d")
+        current_year = datetime.now().year
+        
+        if report_type == 'daily':
+            # Rapport quotidien - données d'aujourd'hui
+            start_date = today
+            end_date = today
+        elif report_type == 'monthly':
+            # Rapport mensuel - données du mois en cours
+            if not start_date:
+                start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+            if not end_date:
+                end_date = today
+        elif report_type == 'yearly':
+            # Rapport annuel - données de l'année en cours
+            start_date = f"{current_year}-01-01"
+            end_date = today
+        else:
+            # Rapport personnalisé - utiliser les dates fournies ou toutes les données
+            if not start_date and not end_date:
+                start_date = None
+                end_date = None
+        
+        print(f"📅 Extraction données: {start_date} à {end_date}")
         
         # Extraire les données
         operations_df = extractor.get_operations_data(
@@ -80,14 +108,29 @@ def generate_report():
         filename = f"rapport_{report_type}_{timestamp}.xlsx"
         filepath = os.path.join(REPORTS_FOLDER, filename)
         
-        # Créer le rapport Excel
+        # Créer le rapport Excel selon le type
         if report_type == 'monthly' and start_date:
             month_year = start_date[:7]  # YYYY-MM
             excel_gen.create_monthly_report(
                 operations_df, depots_df, clients_df, mouvements_df,
                 month_year, filepath
             )
+        elif report_type == 'daily':
+            # Rapport quotidien - données du jour actuel
+            today = datetime.now().strftime("%Y-%m-%d")
+            excel_gen.create_sales_report(
+                operations_df, depots_df, clients_df, mouvements_df,
+                filepath
+            )
+        elif report_type == 'yearly':
+            # Rapport annuel - données de l'année en cours
+            current_year = datetime.now().year
+            excel_gen.create_sales_report(
+                operations_df, depots_df, clients_df, mouvements_df,
+                filepath
+            )
         else:
+            # Rapport personnalisé ou par défaut
             excel_gen.create_sales_report(
                 operations_df, depots_df, clients_df, mouvements_df,
                 filepath
