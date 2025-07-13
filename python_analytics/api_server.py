@@ -24,7 +24,7 @@ CORS(app)  # Permettre les requêtes depuis React
 initialize_firebase()
 
 # Dossier pour les rapports générés
-REPORTS_FOLDER = "generated_reports"
+REPORTS_FOLDER = "/tmp/generated_reports"  # Utiliser /tmp sur Render
 if not os.path.exists(REPORTS_FOLDER):
     os.makedirs(REPORTS_FOLDER)
 
@@ -108,6 +108,8 @@ def generate_report():
         filename = f"rapport_{report_type}_{timestamp}.xlsx"
         filepath = os.path.join(REPORTS_FOLDER, filename)
         
+        print(f"📁 Création fichier: {filepath}")
+        
         # Créer le rapport Excel selon le type
         if report_type == 'monthly' and start_date:
             month_year = start_date[:7]  # YYYY-MM
@@ -135,6 +137,14 @@ def generate_report():
                 operations_df, depots_df, clients_df, mouvements_df,
                 filepath
             )
+        
+        # Vérifier si le fichier a été créé
+        if os.path.exists(filepath):
+            file_size = os.path.getsize(filepath)
+            print(f"✅ Fichier créé: {filepath} ({file_size} bytes)")
+        else:
+            print(f"❌ Fichier non créé: {filepath}")
+            raise Exception(f"Le fichier {filepath} n'a pas été créé")
         
         # Upload vers Firebase Storage
         download_url = excel_gen.upload_to_firebase(filename, "reports")
