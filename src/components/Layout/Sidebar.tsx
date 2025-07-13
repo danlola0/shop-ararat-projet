@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, FileText, BarChart3, Users, Settings, TrendingUp, X, Building, DollarSign } from 'lucide-react';
+import { Home, FileText, BarChart3, Users, Settings, TrendingUp, X, Building, DollarSign, Table } from 'lucide-react';
 import { User } from '../../types';
 
 interface SidebarProps {
@@ -19,9 +19,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const menuItems = [
     ...(user.role && user.role.toLowerCase() === 'admin'
-      ? [
+              ? [
           { id: 'dashboard', label: 'Tableau de Bord', icon: TrendingUp, color: 'text-blue-600', bgColor: 'bg-blue-50' },
           { id: 'synthese', label: 'Synthèse', icon: BarChart3, color: 'text-cyan-700', bgColor: 'bg-cyan-100' },
+          { id: 'rapports-donnees', label: 'Rapports Données', icon: Table, color: 'text-purple-600', bgColor: 'bg-purple-50' },
           { id: 'forms', label: 'Formulaires', icon: FileText, color: 'text-green-600', bgColor: 'bg-green-50' },
           { id: 'shops', label: 'Shops', icon: Building, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
           { id: 'users', label: 'Utilisateurs', icon: Users, color: 'text-orange-600', bgColor: 'bg-orange-50' },

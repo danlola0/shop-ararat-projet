@@ -12,6 +12,7 @@ import { AuthPage } from './components/Auth/AuthPage';
 import { SplashScreen } from './components/SplashScreen';
 import { useAuth } from './hooks/useAuth';
 import SynthesePage from './components/Shops/SynthesePage';
+import RapportsDonneesPage from './components/Shops/RapportsDonneesPage';
 // import PwaInstallBanner from './components/PwaInstallBanner'; // PWA temporairement désactivé
 // import TauxPage from './components/Taux/TauxPage'; // Suppression de l'import
 
@@ -97,6 +98,8 @@ function App() {
         return <Dashboard user={currentUser!} />;
       case 'synthese':
         return <SynthesePage />;
+      case 'rapports-donnees':
+        return <RapportsDonneesPage />;
       case 'forms':
         return <FormsPage />;
       case 'admin':
