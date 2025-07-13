@@ -43,7 +43,7 @@ def initialize_firebase():
             
         cred = credentials.Certificate(firebase_config)
         initialize_app(cred, {
-            'storageBucket': 'shop-ararat-projet.firebasestorage.app'
+            'storageBucket': 'shop-ararat-projet.firebasestorage.app'  # Bucket corrigé
         })
         print("✅ Firebase initialisé avec succès")
         return True
