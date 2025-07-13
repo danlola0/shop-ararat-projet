@@ -98,41 +98,58 @@ const RapportsDonneesPage: React.FC = () => {
           endDate = last.toISOString().split('T')[0];
         }
 
+        console.log('🔍 Recherche des données pour:', { selectedShopId, startDate, endDate });
+
         // Charger les opérations
-        const opQuery = query(
-          collection(db, 'operations'),
-          where('shopId', '==', selectedShopId),
-          where('date', '>=', startDate),
-          where('date', '<=', endDate),
-          orderBy('date', 'desc')
-        );
-        const opSnap = await getDocs(opQuery);
-        const operationsData = opSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Operation));
-        setOperations(operationsData);
+        try {
+          const opQuery = query(
+            collection(db, 'operations'),
+            where('shopId', '==', selectedShopId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+          );
+          const opSnap = await getDocs(opQuery);
+          const operationsData = opSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Operation));
+          console.log('📊 Opérations trouvées:', operationsData.length);
+          setOperations(operationsData);
+        } catch (error) {
+          console.error('❌ Erreur opérations:', error);
+          setOperations([]);
+        }
 
         // Charger les dépôts
-        const depQuery = query(
-          collection(db, 'depots'),
-          where('shopId', '==', selectedShopId),
-          where('date', '>=', startDate),
-          where('date', '<=', endDate),
-          orderBy('date', 'desc')
-        );
-        const depSnap = await getDocs(depQuery);
-        const depotsData = depSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Depot));
-        setDepots(depotsData);
+        try {
+          const depQuery = query(
+            collection(db, 'depots'),
+            where('shopId', '==', selectedShopId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+          );
+          const depSnap = await getDocs(depQuery);
+          const depotsData = depSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Depot));
+          console.log('💰 Dépôts trouvés:', depotsData.length);
+          setDepots(depotsData);
+        } catch (error) {
+          console.error('❌ Erreur dépôts:', error);
+          setDepots([]);
+        }
 
         // Charger les mouvements
-        const mvtQuery = query(
-          collection(db, 'mouvements'),
-          where('shopId', '==', selectedShopId),
-          where('date', '>=', startDate),
-          where('date', '<=', endDate),
-          orderBy('date', 'desc')
-        );
-        const mvtSnap = await getDocs(mvtQuery);
-        const mouvementsData = mvtSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Mouvement));
-        setMouvements(mouvementsData);
+        try {
+          const mvtQuery = query(
+            collection(db, 'mouvements'),
+            where('shopId', '==', selectedShopId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+          );
+          const mvtSnap = await getDocs(mvtQuery);
+          const mouvementsData = mvtSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Mouvement));
+          console.log('💸 Mouvements trouvés:', mouvementsData.length);
+          setMouvements(mouvementsData);
+        } catch (error) {
+          console.error('❌ Erreur mouvements:', error);
+          setMouvements([]);
+        }
 
         // Calculer les statistiques
         const totalVentes = operationsData.reduce((sum, op) => sum + (op.total_general || 0), 0);
@@ -186,6 +203,37 @@ const RapportsDonneesPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // Fonction de debug pour vérifier les données disponibles
+  const debugData = async () => {
+    console.log('🔍 === DEBUG DES DONNÉES ===');
+    
+    // Vérifier toutes les opérations
+    const allOps = await getDocs(collection(db, 'operations'));
+    console.log('📊 Toutes les opérations:', allOps.docs.length);
+    allOps.docs.forEach(doc => {
+      const data = doc.data();
+      console.log('  -', data.shopId, data.date, data.total_general);
+    });
+    
+    // Vérifier tous les dépôts
+    const allDepots = await getDocs(collection(db, 'depots'));
+    console.log('💰 Tous les dépôts:', allDepots.docs.length);
+    allDepots.docs.forEach(doc => {
+      const data = doc.data();
+      console.log('  -', data.shopId, data.date, data.montant);
+    });
+    
+    // Vérifier tous les mouvements
+    const allMouvements = await getDocs(collection(db, 'mouvements'));
+    console.log('💸 Tous les mouvements:', allMouvements.docs.length);
+    allMouvements.docs.forEach(doc => {
+      const data = doc.data();
+      console.log('  -', data.shopId, data.date, data.montant);
+    });
+    
+    console.log('🔍 === FIN DEBUG ===');
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
@@ -214,6 +262,16 @@ const RapportsDonneesPage: React.FC = () => {
                 <option key={shop.id} value={shop.id}>{shop.name}</option>
               ))}
             </select>
+          </div>
+          
+          {/* Bouton Debug */}
+          <div className="flex items-end">
+            <button
+              onClick={debugData}
+              className="w-full px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
+            >
+              🔍 Debug Données
+            </button>
           </div>
 
           {/* Sélection de la date */}
