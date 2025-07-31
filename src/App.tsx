@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Header, HeaderRef } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { Dashboard } from './components/Dashboard/Dashboard';
@@ -11,8 +12,8 @@ import { MessagingPage } from './components/Messaging/MessagingPage';
 import { AuthPage } from './components/Auth/AuthPage';
 import { SplashScreen } from './components/SplashScreen';
 import { useAuth } from './hooks/useAuth';
-import SynthesePage from './components/Shops/SynthesePage';
 import RapportsDonneesPage from './components/Shops/RapportsDonneesPage';
+import SynthesePage from './components/Shops/SynthesePage';
 // import PwaInstallBanner from './components/PwaInstallBanner'; // PWA temporairement désactivé
 // import TauxPage from './components/Taux/TauxPage'; // Suppression de l'import
 
@@ -24,9 +25,18 @@ function App() {
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   
   const { currentUser, loading, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   
   // Référence pour mettre à jour les notifications
   const updateNotificationsRef = useRef<HeaderRef | null>(null);
+
+  // Redirection automatique depuis la racine
+  useEffect(() => {
+    if (location.pathname === '/' && currentUser) {
+      navigate('/forms', { replace: true });
+    }
+  }, [location.pathname, currentUser, navigate]);
 
   // Diagnostic pour identifier les problèmes sur mobile
   useEffect(() => {
@@ -181,7 +191,7 @@ function App() {
       )}
       
       {/* Diagnostic modal pour mobile */}
-      {showDiagnostic && (
+      {false && showDiagnostic && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-bold mb-4">Diagnostic Mobile</h3>

@@ -219,6 +219,16 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
 
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    }
+    return num.toString();
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
@@ -380,11 +390,11 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ user }) => {
                     <p className="text-xs text-gray-600">Utilisateurs</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(shop.revenue)}</p>
+                    <p className="text-2xl font-bold text-green-600">{formatNumber(shop.revenue)} CDF</p>
                     <p className="text-xs text-gray-600">Revenus</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">{shop.transactionsCount}</p>
+                    <p className="text-2xl font-bold text-blue-600">{formatNumber(shop.transactionsCount)}</p>
                     <p className="text-xs text-gray-600">Transactions</p>
                   </div>
                 </div>

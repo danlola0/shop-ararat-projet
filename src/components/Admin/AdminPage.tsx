@@ -20,7 +20,6 @@ import {
 import { User } from '../../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { db } from '../../firebase/config';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
@@ -453,94 +452,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ user }) => {
     }).format(amount);
   };
 
-  const handleExportExcel = async () => {
-    // Créer un nouveau classeur Excel
-    const workbook = XLSX.utils.book_new();
-    const dateStr = new Date().toLocaleString('fr-FR');
-
-    // Feuille 1: Informations générales
-    const generalInfo = [
-      ['Rapport Administrateur - Ararat Projet'],
-      [''],
-      ['Période', selectedPeriod === 'week' ? 'Cette semaine' : selectedPeriod === 'month' ? 'Ce mois' : 'Ce trimestre'],
-      ['Généré le', dateStr],
-      ['Utilisateur', `${user?.prenom} ${user?.nom} (${user?.role})`],
-      ['Vue', user && user.role === 'admin' ? 'Tous les shops' : `Shop: ${user?.shopName}`],
-      [''],
-      ['Statistiques principales'],
-      ['Statistique', 'Valeur'],
-      ["Chiffre d'affaires total", formatCurrency(stats.totalRevenue)],
-      ['Transactions totales', stats.totalTransactions],
-      ['Clients actifs', stats.totalClients],
-      ['Dépôts de cartes', stats.totalDepots || 0],
-      [user && user.role === 'admin' ? 'Shops actifs' : 'Utilisateurs', user && user.role === 'admin' ? stats.activeShops : stats.totalUsers],
-    ];
-
-    const generalSheet = XLSX.utils.aoa_to_sheet(generalInfo);
-    XLSX.utils.book_append_sheet(workbook, generalSheet, 'Informations');
-
-    // Feuille 2: Performance par shop
-    if (shopPerformance.length > 0) {
-      const shopData = [
-        ['Shop', "Chiffre d'affaires", 'Transactions', 'Clients', 'Dépôts Cartes', 'Utilisateurs', 'Croissance (%)'],
-        ...shopPerformance.map(shop => [
-          shop.shopName,
-          formatCurrency(shop.revenue),
-          shop.transactions,
-          shop.clients,
-          shop.depots || 0,
-          shop.users,
-          `${shop.growth}%`
-        ])
-      ];
-
-      const shopSheet = XLSX.utils.aoa_to_sheet(shopData);
-      XLSX.utils.book_append_sheet(workbook, shopSheet, 'Performance Shops');
-    }
-
-    // Feuille 3: Détails des dépôts de cartes (utiliser les données déjà calculées)
-    try {
-      let depotsData;
-      if (user && user.role === 'admin') {
-        // Utiliser les données déjà récupérées dans calculateStats
-        depotsData = depots;
-      } else {
-        // Utiliser les données déjà récupérées dans calculateStats
-        depotsData = depots;
-      }
-
-      if (depotsData && depotsData.length > 0) {
-        const depotsSheetData = [
-          ['Client', 'Montant', 'Type', 'Date', 'Shop', 'Utilisateur'],
-          ...depotsData.map(depot => [
-            depot.clientName || 'N/A',
-            formatCurrency(depot.montant),
-            depot.type === 'depot' ? 'Dépôt' : 'Retrait',
-            new Date(depot.date).toLocaleDateString('fr-FR'),
-            depot.shopName || 'N/A',
-            depot.userName || 'N/A'
-          ])
-        ];
-
-        const depotsSheet = XLSX.utils.aoa_to_sheet(depotsSheetData);
-        XLSX.utils.book_append_sheet(workbook, depotsSheet, 'Dépôts Cartes');
-      }
-    } catch (error) {
-      console.error('Erreur lors de la récupération des dépôts:', error);
-    }
-
-    // Feuille 4: Statistiques utilisateurs
-    const userData = [
-      ['Total utilisateurs', 'Admins', 'Users', 'Actifs', 'Inactifs'],
-      [userStats.total, userStats.admins, userStats.users, userStats.active, userStats.inactive]
-    ];
-
-    const userSheet = XLSX.utils.aoa_to_sheet(userData);
-    XLSX.utils.book_append_sheet(workbook, userSheet, 'Statistiques Utilisateurs');
-
-    // Télécharger le fichier Excel
-    XLSX.writeFile(workbook, `rapport-admin-${selectedPeriod}-${new Date().toISOString().split('T')[0]}.xlsx`);
-  };
+  // Supprimer toute la fonction handleExportExcel car elle dépend de XLSX
 
   const handleExportReport = async () => {
     // Création du PDF

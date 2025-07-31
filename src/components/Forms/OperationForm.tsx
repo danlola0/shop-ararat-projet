@@ -57,7 +57,9 @@ const OperationForm: React.FC = () => {
   const [tauxJournalier, setTauxJournalier] = useState<number | null>(null);
   const [tauxJournalierLoading, setTauxJournalierLoading] = useState(true);
   const [tauxJournalierError, setTauxJournalierError] = useState('');
-  const [especeCaisseCDF, setEspeceCaisseCDF] = useState(''); // Nouveau champ pour la saisie en CDF
+  const [especeCaisseCDF, setEspeceCaisseCDF] = useState('');
+  // Ajout pour la cohérence du total général stock initial
+  const [totalGeneralStockInitialEnregistre, setTotalGeneralStockInitialEnregistre] = useState<number | null>(null);
 
   // Ajout d'un état pour stock final CDF par service électronique
   const [electronicCDF, setElectronicCDF] = useState(
@@ -186,6 +188,7 @@ const OperationForm: React.FC = () => {
               especeCaisse: soirData.espece_en_caisse !== undefined && soirData.espece_en_caisse !== null,
               especeCaisseCDF: soirData.espece_en_caisse_cdf !== undefined && soirData.espece_en_caisse_cdf !== null
             }));
+            setTotalGeneralStockInitialEnregistre(soirData.total_general || 0);
           } else {
             console.log('AUCUN RAPPORT SOIR TROUVÉ pour', dateVeille, currentUser.shopId);
             setEspeceCaisse('');
@@ -195,6 +198,7 @@ const OperationForm: React.FC = () => {
               especeCaisse: false,
               especeCaisseCDF: false
             }));
+            setTotalGeneralStockInitialEnregistre(null);
           }
           setElectronic(prev => {
             const copy = { ...prev };
@@ -246,6 +250,7 @@ const OperationForm: React.FC = () => {
           setEspeceCaisseCDFLocked(false);
           setAutoFilledStocks({}); // Ajouté : jamais de verrouillage auto pour le soir
           setAlert(null);
+          setTotalGeneralStockInitialEnregistre(null);
         }
         
         // Valider les stocks existants
@@ -390,6 +395,7 @@ const OperationForm: React.FC = () => {
                   ? yestData.espece_en_caisse_cdf + ''
                   : ''
               );
+              setTotalGeneralStockInitialEnregistre(yestData.total_general || 0);
             } else {
               // Certains stocks finaux manquent - mais on va quand même essayer de récupérer ceux qui existent
               console.log('[DEBUG] ⚠️ Certains stocks finaux manquent, mais on récupère ceux qui existent');
@@ -455,6 +461,7 @@ const OperationForm: React.FC = () => {
               // Réinitialiser l'espèce en caisse pour la nouvelle journée UNIQUEMENT si pas de rapport du soir
               setEspeceCaisse('');
               setEspeceCaisseCDF('');
+              setTotalGeneralStockInitialEnregistre(null);
             }
           } else {
             // Aucun rapport du soir pour la veille - total général antérieur reste à 0
@@ -491,6 +498,7 @@ const OperationForm: React.FC = () => {
             // Réinitialiser l'espèce en caisse pour la nouvelle journée UNIQUEMENT si pas de rapport du soir
             setEspeceCaisse('');
             setEspeceCaisseCDF('');
+            setTotalGeneralStockInitialEnregistre(null);
           }
           setInitialLocked(false);
           setFinalLocked(false);
@@ -567,6 +575,7 @@ const OperationForm: React.FC = () => {
             setInitialLocked(false);
             setFinalLocked(false);
             setAlert(null); // On n'affiche plus d'erreur bloquante
+            setTotalGeneralStockInitialEnregistre(null);
           }
         }
       }
@@ -624,7 +633,8 @@ const OperationForm: React.FC = () => {
   };
 
   const handleElectronicChange = (key: string, field: string, value: string) => {
-    setElectronic(e => ({ ...e, [key]: { ...e[key], [field]: value } }));
+    const val = value.replace(',', '.');
+    setElectronic(e => ({ ...e, [key]: { ...e[key], [field]: val } }));
     
     // Valider le stock final si c'est ce champ qui change
     if (field === 'stockFinal') {
@@ -672,7 +682,8 @@ const OperationForm: React.FC = () => {
   };
   
   const handleCreditChange = (key: string, field: string, value: string) => {
-    setCredit(c => ({ ...c, [key]: { ...c[key], [field]: value } }));
+    const val = value.replace(',', '.');
+    setCredit(c => ({ ...c, [key]: { ...c[key], [field]: val } }));
     
     // Valider le stock final si c'est ce champ qui change
     if (field === 'stockFinal') {
@@ -791,14 +802,19 @@ const OperationForm: React.FC = () => {
         espece_en_caisse_usd += espece_en_caisse_cdf / tauxJournalier;
       }
       // Calcul du total général
-      const total_elec = electronicServices.reduce((total, s) => {
-        const stockFinalUSD = parseFloat(electronic[s.key].stockFinal) || 0;
-        const stockFinalCDF = parseFloat(electronicCDF[s.key]) || 0;
-        const stockFinalCDFenUSD = tauxJournalier ? stockFinalCDF / tauxJournalier : 0;
-        return total + stockFinalUSD + stockFinalCDFenUSD;
-      }, 0);
-      const total_credit = Object.values(vente_credit).reduce((total: number, item: any) => total + Number(item.stock_final || 0), 0);
-      const total_general = espece_en_caisse_usd + total_elec + total_credit;
+      let total_general;
+      if (periodeRapport === 'matin') {
+        total_general = totalGeneralStockInitial;
+      } else {
+        const total_elec = electronicServices.reduce((total, s) => {
+          const stockFinalUSD = parseFloat(electronic[s.key].stockFinal) || 0;
+          const stockFinalCDF = parseFloat(electronicCDF[s.key]) || 0;
+          const stockFinalCDFenUSD = tauxJournalier ? stockFinalCDF / tauxJournalier : 0;
+          return total + stockFinalUSD + stockFinalCDFenUSD;
+        }, 0);
+        const total_credit = Object.values(vente_credit).reduce((total, item) => total + Number(item.stock_final || 0), 0);
+        total_general = espece_en_caisse_usd + total_elec + total_credit;
+      }
       // Enregistrement dans la collection racine 'operations'
       await addDoc(collection(db, 'operations'), {
         userId,
@@ -861,6 +877,29 @@ const OperationForm: React.FC = () => {
   const shouldBeEditable = periodeRapport === 'soir' && !finalLocked && !isClotured;
 
   console.log('[DEBUG] RENDER : especeCaisse', especeCaisse, 'locked', especeCaisseLocked, 'periode', periodeRapport);
+
+  // Calcul du total général de stock initial (matin)
+  const totalGeneralStockInitial = (() => {
+    if (periodeRapport !== 'matin') return null;
+    let total = 0;
+    // Espèce en caisse USD + conversion CDF
+    if (tauxJournalier && especeCaisseCDF) {
+      total += parseFloat(especeCaisseCDF) / tauxJournalier;
+    }
+    total += parseFloat(especeCaisse) || 0;
+    // Argent électronique (stock initial USD + CDF converti)
+    electronicServices.forEach(s => {
+      total += Number(parseFloat(electronic[s.key].stockInitial) || 0);
+      if (tauxJournalier && electronicInitialCDF[s.key]) {
+        total += parseFloat(electronicInitialCDF[s.key]) / tauxJournalier;
+      }
+    });
+    // Crédit (stock initial)
+    creditNetworks.forEach(n => {
+      total += Number(parseFloat(credit[n.key].stockInitial) || 0);
+    });
+    return total;
+  })();
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-3 sm:p-6 rounded-lg shadow border mt-4">
@@ -929,12 +968,19 @@ const OperationForm: React.FC = () => {
             <div className="bg-gray-50 rounded-lg p-4 border mb-2">
               <label className="block text-sm font-medium mb-1">Espèce en caisse (USD)</label>
               <input
-                type="number"
+                type="text"
                 value={especeCaisse}
-                onChange={e => setEspeceCaisse(e.target.value)}
+                onChange={e => {
+                  // Remplacer la virgule par un point
+                  const val = e.target.value.replace(',', '.');
+                  // Autoriser uniquement chiffres, point et au plus une virgule/point
+                  if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                    setEspeceCaisse(val);
+                  }
+                }}
                 onBlur={e => {
                   if (e.target.value) {
-                    setEspeceCaisse(Number(e.target.value).toFixed(2));
+                    setEspeceCaisse(parseFloat(e.target.value).toFixed(2));
                   }
                 }}
                 className="w-full border rounded px-3 py-2"
@@ -948,9 +994,21 @@ const OperationForm: React.FC = () => {
             <div className="bg-gray-50 rounded-lg p-4 border mb-2">
               <label className="block text-sm font-medium mb-1">Espèce en caisse (CDF)</label>
               <input
-                type="number"
+                type="text"
                 value={especeCaisseCDF}
-                onChange={e => setEspeceCaisseCDF(e.target.value)}
+                onChange={e => {
+                  // Remplacer la virgule par un point
+                  const val = e.target.value.replace(',', '.');
+                  // Autoriser uniquement chiffres, point et au plus une virgule/point
+                  if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                    setEspeceCaisseCDF(val);
+                  }
+                }}
+                onBlur={e => {
+                  if (e.target.value) {
+                    setEspeceCaisseCDF(parseFloat(e.target.value).toFixed(2));
+                  }
+                }}
                 className="w-full border rounded px-3 py-2"
                 placeholder="Saisir le montant en CDF"
                 min="0"
@@ -1000,7 +1058,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock initial ($)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronic[s.key].stockInitial}
                               onChange={e => handleElectronicChange(s.key, 'stockInitial', e.target.value)}
                               className="w-full border rounded px-2 py-1"
@@ -1012,7 +1070,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock initial (CDF)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronicInitialCDF[s.key]}
                               onChange={e => setElectronicInitialCDF(c => ({ ...c, [s.key]: e.target.value }))}
                               className="w-full border rounded px-2 py-1"
@@ -1041,7 +1099,7 @@ const OperationForm: React.FC = () => {
                             <label className="block text-xs font-medium mb-1">Réapprovisionnement ($)</label>
                             <div className="flex gap-1">
                               <input
-                                type="number"
+                                type="text"
                                 value={electronic[s.key].reappro}
                                 onChange={e => handleElectronicChange(s.key, 'reappro', e.target.value)}
                                 className="flex-1 border rounded px-2 py-1"
@@ -1068,7 +1126,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final ($)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronic[s.key].stockFinal}
                               onChange={e => handleElectronicChange(s.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`electronic_${s.key}`] ? 'border-red-500' : ''}`}
@@ -1091,9 +1149,14 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final (CDF)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronicCDF[s.key]}
-                              onChange={e => setElectronicCDF(c => ({ ...c, [s.key]: e.target.value }))}
+                              onChange={e => {
+                                const val = e.target.value.replace(',', '.');
+                                if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                                  setElectronicCDF(c => ({ ...c, [s.key]: val }));
+                                }
+                              }}
                               className="w-full border rounded px-2 py-1"
                               min="0"
                               disabled={isClotured || !tauxJournalier}
@@ -1151,7 +1214,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock initial</label>
                             <input
-                              type="number"
+                              type="text"
                               value={credit[n.key].stockInitial}
                               onChange={e => handleCreditChange(n.key, 'stockInitial', e.target.value)}
                               className="w-full border rounded px-2 py-1"
@@ -1164,7 +1227,7 @@ const OperationForm: React.FC = () => {
                             <label className="block text-xs font-medium mb-1">Réapprovisionnement</label>
                             <div className="flex gap-1">
                               <input
-                                type="number"
+                                type="text"
                                 value={credit[n.key].reappro}
                                 onChange={e => handleCreditChange(n.key, 'reappro', e.target.value)}
                                 className="flex-1 border rounded px-2 py-1"
@@ -1191,7 +1254,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final</label>
                             <input
-                              type="number"
+                              type="text"
                               value={credit[n.key].stockFinal}
                               onChange={e => handleCreditChange(n.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`credit_${n.key}`] ? 'border-red-500' : ''}`}
@@ -1243,12 +1306,19 @@ const OperationForm: React.FC = () => {
             <div className="bg-gray-50 rounded-lg p-4 border mb-2">
               <label className="block text-sm font-medium mb-1">Espèce en caisse (USD)</label>
               <input
-                type="number"
+                type="text"
                 value={especeCaisse}
-                onChange={e => setEspeceCaisse(e.target.value)}
+                onChange={e => {
+                  // Remplacer la virgule par un point
+                  const val = e.target.value.replace(',', '.');
+                  // Autoriser uniquement chiffres, point et au plus une virgule/point
+                  if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                    setEspeceCaisse(val);
+                  }
+                }}
                 onBlur={e => {
                   if (e.target.value) {
-                    setEspeceCaisse(Number(e.target.value).toFixed(2));
+                    setEspeceCaisse(parseFloat(e.target.value).toFixed(2));
                   }
                 }}
                 className="w-full border rounded px-3 py-2"
@@ -1261,9 +1331,21 @@ const OperationForm: React.FC = () => {
             <div className="bg-gray-50 rounded-lg p-4 border mb-2">
               <label className="block text-sm font-medium mb-1">Espèce en caisse (CDF)</label>
               <input
-                type="number"
+                type="text"
                 value={especeCaisseCDF}
-                onChange={e => setEspeceCaisseCDF(e.target.value)}
+                onChange={e => {
+                  // Remplacer la virgule par un point
+                  const val = e.target.value.replace(',', '.');
+                  // Autoriser uniquement chiffres, point et au plus une virgule/point
+                  if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                    setEspeceCaisseCDF(val);
+                  }
+                }}
+                onBlur={e => {
+                  if (e.target.value) {
+                    setEspeceCaisseCDF(parseFloat(e.target.value).toFixed(2));
+                  }
+                }}
                 className="w-full border rounded px-3 py-2"
                 placeholder="Saisir le montant en CDF"
                 min="0"
@@ -1312,7 +1394,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final ($)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronic[s.key].stockFinal}
                               onChange={e => handleElectronicChange(s.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`electronic_${s.key}`] ? 'border-red-500' : ''}`}
@@ -1335,9 +1417,14 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final (CDF)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronicCDF[s.key]}
-                              onChange={e => setElectronicCDF(c => ({ ...c, [s.key]: e.target.value }))}
+                              onChange={e => {
+                                const val = e.target.value.replace(',', '.');
+                                if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                                  setElectronicCDF(c => ({ ...c, [s.key]: val }));
+                                }
+                              }}
                               className="w-full border rounded px-2 py-1"
                               min="0"
                               disabled={isClotured || !tauxJournalier}
@@ -1367,7 +1454,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final ($)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronic[s.key].stockFinal}
                               onChange={e => handleElectronicChange(s.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`electronic_${s.key}`] ? 'border-red-500' : ''}`}
@@ -1390,9 +1477,14 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final (CDF)</label>
                             <input
-                              type="number"
+                              type="text"
                               value={electronicCDF[s.key]}
-                              onChange={e => setElectronicCDF(c => ({ ...c, [s.key]: e.target.value }))}
+                              onChange={e => {
+                                const val = e.target.value.replace(',', '.');
+                                if (/^\d*[\.,]?\d*$/.test(e.target.value)) {
+                                  setElectronicCDF(c => ({ ...c, [s.key]: val }));
+                                }
+                              }}
                               className="w-full border rounded px-2 py-1"
                               min="0"
                               disabled={isClotured || !tauxJournalier}
@@ -1450,7 +1542,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final</label>
                             <input
-                              type="number"
+                              type="text"
                               value={credit[n.key].stockFinal}
                               onChange={e => handleCreditChange(n.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`credit_${n.key}`] ? 'border-red-500' : ''}`}
@@ -1472,7 +1564,7 @@ const OperationForm: React.FC = () => {
                           <div>
                             <label className="block text-xs font-medium mb-1">Stock final</label>
                             <input
-                              type="number"
+                              type="text"
                               value={credit[n.key].stockFinal}
                               onChange={e => handleCreditChange(n.key, 'stockFinal', e.target.value)}
                               className={`w-full border rounded px-2 py-1 ${stockErrors[`credit_${n.key}`] ? 'border-red-500' : ''}`}
@@ -1543,6 +1635,16 @@ const OperationForm: React.FC = () => {
       {doublonRapport && (
         <div className="flex items-center bg-yellow-50 border border-yellow-300 text-yellow-800 rounded p-3 mb-4">
           <AlertCircle className="mr-2" /> {doublonRapport}
+        </div>
+      )}
+      {/* Affichage du total général de stock initial (matin) */}
+      {periodeRapport === 'matin' && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <span className="text-lg font-bold text-green-900">
+            Total général du stock initial : {totalGeneralStockInitialEnregistre !== null
+              ? totalGeneralStockInitialEnregistre.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : (totalGeneralStockInitial !== null ? totalGeneralStockInitial.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')} $
+          </span>
         </div>
       )}
     </div>

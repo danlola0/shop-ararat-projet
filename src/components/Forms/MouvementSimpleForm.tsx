@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../../firebase/config';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
-import { ArrowLeftRight, Save } from 'lucide-react';
+import { ArrowLeftRight, Save, TrendingUp } from 'lucide-react';
 
 const MouvementSimpleForm: React.FC = () => {
   const { currentUser } = useAuth();
@@ -15,6 +15,39 @@ const MouvementSimpleForm: React.FC = () => {
   const [error, setError] = useState('');
   const [transactions, setTransactions] = useState([{ montant: '', description: '' }]);
 
+  // --- Taux journalier ---
+  const [tauxJournalier, setTauxJournalier] = useState<number | null>(null);
+  const [tauxJournalierLoading, setTauxJournalierLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTaux = async () => {
+      setTauxJournalierLoading(true);
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const tauxQuery = query(collection(db, 'TauxJournalier'), where('date', '==', todayStr));
+        const snap = await getDocs(tauxQuery);
+        if (!snap.empty) {
+          setTauxJournalier(snap.docs[0].data().taux_du_jour);
+        } else {
+          const lastTauxQuery = query(collection(db, 'TauxJournalier'), orderBy('date', 'desc'), limit(1));
+          const lastSnap = await getDocs(lastTauxQuery);
+          if (!lastSnap.empty) {
+            setTauxJournalier(lastSnap.docs[0].data().taux_du_jour);
+          } else {
+            setTauxJournalier(null);
+          }
+        }
+      } catch (e) {
+        console.error("Erreur de chargement du taux", e);
+        setTauxJournalier(null);
+      } finally {
+        setTauxJournalierLoading(false);
+      }
+    };
+    fetchTaux();
+  }, []);
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -26,12 +59,23 @@ const MouvementSimpleForm: React.FC = () => {
         setLoading(false);
         return;
       }
+      
       let totalMontant = montant;
       let fullDescription = description;
-      if (transactions.length > 1 || transactions[0].montant !== '' || transactions[0].description !== '') {
+      
+      const isMultiTransaction = transactions.length > 1 || transactions[0].montant !== '' || transactions[0].description !== '';
+
+      if (isMultiTransaction) {
         totalMontant = transactions.reduce((sum, t) => sum + (parseFloat(t.montant) || 0), 0).toString();
         fullDescription = transactions.map(t => t.description).filter(Boolean).join(' | ');
       }
+
+      if (!isMultiTransaction && (montant === '' || description === '')) {
+        setError("Veuillez remplir le montant et la description.");
+        setLoading(false);
+        return;
+      }
+
       const shopId = currentUser.shopId;
       const userId = currentUser.id;
       await addDoc(collection(db, 'mouvements'), {
@@ -63,6 +107,20 @@ const MouvementSimpleForm: React.FC = () => {
         <ArrowLeftRight className="text-blue-600 mr-2" size={28} />
         <h2 className="text-2xl font-bold text-blue-900">Mouvements</h2>
       </div>
+
+      {/* Affichage du Taux */}
+      <div className="mb-4 p-3 bg-blue-100 border border-blue-200 rounded-lg flex items-center justify-center">
+        <TrendingUp size={20} className="text-blue-700 mr-2" />
+        <span className="font-semibold text-blue-800">
+          {tauxJournalierLoading 
+            ? 'Chargement du taux...' 
+            : tauxJournalier 
+              ? `Taux du jour : 1 USD = ${tauxJournalier.toLocaleString('fr-FR')} CDF`
+              : 'Aucun taux défini.'
+          }
+        </span>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-sm font-medium mb-1">Sélectionner l'opération</label>
@@ -150,4 +208,4 @@ const MouvementSimpleForm: React.FC = () => {
   );
 };
 
-export default MouvementSimpleForm; 
+export default MouvementSimpleForm;
